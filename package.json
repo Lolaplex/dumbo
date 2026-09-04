@@ -1,0 +1,35 @@
+{
+  "name": "dumbo",
+  "version": "0.42.0",
+  "description": "Minimal Windows AI desktop overlay with instant hotkey, text selection, and TTS",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "prebuild": "node -e \"if(process.platform==='win32'){try{require('child_process').execSync('taskkill /F /IM dumbo.exe',{stdio:'ignore'})}catch(e){}}\"",
+    "build": "vite build",
+    "build:exe": "tauri build --no-bundle",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "tauri": "tauri"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "dompurify": "^3.2.6",
+    "highlight.js": "^11.11.1",
+    "marked": "^15.0.12"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.6",
+    "@sveltejs/kit": "^2.9.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@tauri-apps/cli": "^2",
+    "@types/dompurify": "^3.2.0",
+    "svelte": "^5.0.0",
+    "svelte-check": "^4.0.0",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3"
+  }
+}

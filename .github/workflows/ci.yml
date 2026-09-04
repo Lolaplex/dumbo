@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend Quality Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check Svelte types
+        run: npm run check
+
+      - name: Build frontend
+        run: npm run build
+
+  notify:
+    name: Discord
+    needs: [frontend]
+    if: ${{ failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Post failure to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "::warning::DISCORD_WEBHOOK_URL unset; skip Discord notify"
+            exit 0
+          fi
+          PAYLOAD=$(python3 -c "import json, os; print(json.dumps({'content': f\"**{os.environ['GITHUB_REPOSITORY']}** \`{os.environ['GITHUB_WORKFLOW']}\` failed on \`{os.environ['GITHUB_REF_NAME']}\`\n{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\"}))")
+          HTTP=$(curl -sS -o /tmp/discord-ci-body.txt -w "%{http_code}" \
+            -X POST -H "Content-Type: application/json" \
+            --data-binary "$PAYLOAD" "$DISCORD_WEBHOOK_URL")
+          if [ "$HTTP" = "204" ] || [ "$HTTP" = "200" ]; then
+            echo "Discord notified (HTTP $HTTP)"
+          else
+            echo "::warning::Discord webhook HTTP ${HTTP}: $(tr -d '\0' < /tmp/discord-ci-body.txt | head -c 500)"
+            exit 1
+          fi

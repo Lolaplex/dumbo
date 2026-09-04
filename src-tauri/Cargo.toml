@@ -1,0 +1,40 @@
+[package]
+name = "dumbo"
+version = "0.42.0"
+description = "Minimal Windows AI desktop overlay with instant hotkey, text selection, and TTS"
+authors = ["Lolaplex"]
+edition = "2021"
+repository = "https://github.com/Lolaplex/dumbo"
+license = "MIT"
+
+[lib]
+name = "dumbo_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-clipboard-manager = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+futures-util = "0.3"
+tokio = { version = "1", features = ["time"] }
+keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native"] }
+enigo = "0.3"
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+tauri-plugin-mcp-bridge = "0.11"
+rodio = { version = "0.19", features = ["symphonia-mp3", "symphonia-wav"] }
+base64 = "0.22"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
+
+[target.'cfg(windows)'.dependencies]
+uiautomation = "0.4"

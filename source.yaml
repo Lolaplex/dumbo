@@ -1,0 +1,5 @@
+# Machine-readable hooks for git-updater.
+# Rust + WebView2 + MSVC are machine prereqs (see README), not this hook.
+version: 1
+install: npm ci
+update: npm ci
