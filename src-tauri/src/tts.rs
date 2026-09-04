@@ -494,7 +494,7 @@ async fn synthesize_gemini(
     );
 
     let prompt = format!(
-        "Lies den folgenden Text klar, flüssig und mit natürlicher Betonung auf Deutsch vor. Füge keine Einleitung oder Kommentare hinzu:\n\n{}",
+        "Read the following text clearly and fluently with natural intonation. Do not add any introductory or concluding comments:\n\n{}",
         text
     );
 
@@ -618,6 +618,15 @@ fn escape_xml(s: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+pub fn derive_azure_locale(voice: &str, fallback: crate::i18n::Locale) -> String {
+    let parts: Vec<&str> = voice.split('-').collect();
+    if parts.len() >= 2 && parts[0].len() == 2 && (parts[1].len() == 2 || parts[1].len() == 4) {
+        format!("{}-{}", parts[0], parts[1])
+    } else {
+        fallback.bcp47().to_string()
+    }
+}
+
 async fn synthesize_azure(
     key: &str,
     region: &str,
@@ -625,7 +634,7 @@ async fn synthesize_azure(
     text: &str,
 ) -> Result<Vec<u8>, String> {
     if key.trim().is_empty() {
-        return Err("Azure Speech Key fehlt.".into());
+        return Err(crate::i18n::t(crate::i18n::system_locale(), "tts_azure_key_missing").into());
     }
     let reg = if region.trim().is_empty() {
         DEFAULT_AZURE_TTS_REGION
@@ -638,15 +647,7 @@ async fn synthesize_azure(
         voice.trim()
     };
 
-    let lang = if vname.starts_with("en-") {
-        "en-US"
-    } else if vname.starts_with("fr-") {
-        "fr-FR"
-    } else if vname.starts_with("es-") {
-        "es-ES"
-    } else {
-        "de-DE"
-    };
+    let lang = derive_azure_locale(vname, crate::i18n::system_locale());
 
     let url = format!("https://{reg}.tts.speech.microsoft.com/cognitiveservices/v1");
 
@@ -1036,8 +1037,10 @@ pub fn trigger_tts(app: &AppHandle) {
             ),
         };
 
+        let locale = crate::i18n::resolve_locale(&settings.language);
+
         if text.is_empty() {
-            let _ = app.emit("tts-error", "Kein Text markiert (und Zwischenablage ist leer).");
+            let _ = app.emit("tts-error", crate::i18n::t(locale, "tts_no_text"));
             return;
         }
 
@@ -1059,7 +1062,10 @@ pub fn trigger_tts(app: &AppHandle) {
         if key.trim().is_empty()
             && (provider == "azure" || provider == "elevenlabs" || provider == "openai" || provider == "gemini")
         {
-            let msg = format!("TTS API-Key für '{provider}' fehlt. Bitte in Einstellungen eintragen.");
+            let msg = match locale {
+                crate::i18n::Locale::De => format!("TTS API-Key für '{provider}' fehlt. Bitte in den Einstellungen eintragen."),
+                crate::i18n::Locale::En => format!("TTS API key for '{provider}' is missing. Please enter it in Settings."),
+            };
             eprintln!("{msg}");
             let _ = app.emit("tts-error", msg);
             return;
@@ -1076,8 +1082,12 @@ pub fn trigger_tts(app: &AppHandle) {
         )
         .await
         {
-            eprintln!("TTS Fehler: {err}");
-            let _ = app.emit("tts-error", format!("TTS-Fehler: {err}"));
+            let prefix = match locale {
+                crate::i18n::Locale::De => "TTS-Fehler",
+                crate::i18n::Locale::En => "TTS error",
+            };
+            eprintln!("{prefix}: {err}");
+            let _ = app.emit("tts-error", format!("{prefix}: {err}"));
         } else if settings.history_enabled {
             let _ = crate::history::save_tts_turn(&app, &provider, voice_or_model, &text);
         }
@@ -1121,7 +1131,8 @@ pub struct LocalTtsStatus {
 }
 
 #[tauri::command]
-pub async fn get_local_tts_status(url: Option<String>) -> Result<LocalTtsStatus, String> {
+pub async fn get_local_tts_status(app: AppHandle, url: Option<String>) -> Result<LocalTtsStatus, String> {
+    let locale = crate::i18n::app_locale(&app);
     let target_url = url.unwrap_or_else(|| DEFAULT_CUSTOM_TTS_URL.to_string());
     let clean_url = normalize_tts_base(&target_url);
 
@@ -1153,16 +1164,22 @@ pub async fn get_local_tts_status(url: Option<String>) -> Result<LocalTtsStatus,
 
                 let message = if ready {
                     if let (Some(backend), Some(name)) = (&device_backend, &device_name) {
-                        format!("TTS bereit ({backend}: {name})")
+                        match locale {
+                            crate::i18n::Locale::De => format!("TTS bereit ({backend}: {name})"),
+                            crate::i18n::Locale::En => format!("TTS ready ({backend}: {name})"),
+                        }
                     } else {
-                        "TTS Server bereit".to_string()
+                        crate::i18n::t(locale, "tts_custom_ready").to_string()
                     }
                 } else if loading {
-                    "Server lädt Modell im Hintergrund...".to_string()
+                    crate::i18n::t(locale, "tts_custom_loading").to_string()
                 } else if let Some(err) = error {
-                    format!("TTS Server Fehler: {err}")
+                    match locale {
+                        crate::i18n::Locale::De => format!("TTS Server Fehler: {err}"),
+                        crate::i18n::Locale::En => format!("TTS server error: {err}"),
+                    }
                 } else {
-                    "TTS Server läuft, Modell noch nicht initialisiert".to_string()
+                    crate::i18n::t(locale, "tts_custom_not_init").to_string()
                 };
 
                 return Ok(LocalTtsStatus {
@@ -1180,7 +1197,7 @@ pub async fn get_local_tts_status(url: Option<String>) -> Result<LocalTtsStatus,
     }
 
     // 2) OpenAI-compatible probe (Kokoro FastAPI, Piper wrappers, …)
-    if let Some(status) = probe_openai_compatible_tts(&client, &clean_url).await {
+    if let Some(status) = probe_openai_compatible_tts(&client, &clean_url, locale).await {
         return Ok(status);
     }
 
@@ -1188,7 +1205,7 @@ pub async fn get_local_tts_status(url: Option<String>) -> Result<LocalTtsStatus,
         running: false,
         ready: false,
         url: clean_url,
-        message: "TTS Server nicht erreichbar (weder /health noch /v1/models)".to_string(),
+        message: crate::i18n::t(locale, "tts_custom_unreachable").to_string(),
         device_backend: None,
         device_name: None,
         cpu_warning: None,
@@ -1198,6 +1215,7 @@ pub async fn get_local_tts_status(url: Option<String>) -> Result<LocalTtsStatus,
 async fn probe_openai_compatible_tts(
     client: &reqwest::Client,
     base: &str,
+    locale: crate::i18n::Locale,
 ) -> Option<LocalTtsStatus> {
     let api_root = openai_api_root(base);
     let candidates = [
@@ -1211,9 +1229,9 @@ async fn probe_openai_compatible_tts(
         match client.get(&probe).send().await {
             Ok(res) if res.status().is_success() || res.status().as_u16() == 401 => {
                 let label = if api_root.contains("8880") || probe.contains("voices") {
-                    "Kokoro/OpenAI-TTS erreichbar"
+                    crate::i18n::t(locale, "tts_custom_kokoro_reachable")
                 } else {
-                    "OpenAI-kompatibler TTS Server erreichbar"
+                    crate::i18n::t(locale, "tts_custom_openai_reachable")
                 };
                 return Some(LocalTtsStatus {
                     running: true,
@@ -1326,6 +1344,19 @@ mod tests {
             openai_speech_url("http://127.0.0.1:8880"),
             "http://127.0.0.1:8880/v1/audio/speech"
         );
+    }
+
+    #[test]
+    fn derives_azure_locale_from_voice_or_fallback() {
+        use super::derive_azure_locale;
+        use crate::i18n::Locale;
+
+        assert_eq!(derive_azure_locale("de-DE-ConradNeural", Locale::En), "de-DE");
+        assert_eq!(derive_azure_locale("en-US-JennyNeural", Locale::De), "en-US");
+        assert_eq!(derive_azure_locale("en-GB-RyanNeural", Locale::De), "en-GB");
+        assert_eq!(derive_azure_locale("fr-FR-HenriNeural", Locale::En), "fr-FR");
+        assert_eq!(derive_azure_locale("custom-voice", Locale::De), "de-DE");
+        assert_eq!(derive_azure_locale("custom-voice", Locale::En), "en-US");
     }
 }
 

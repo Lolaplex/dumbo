@@ -1135,7 +1135,7 @@ checksum = "f678cf4a922c215c63e0de95eb1ff08a958a81d47e485cf9da1e27bf6305cfa5"
 
 [[package]]
 name = "dumbo"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "base64 0.22.1",
  "enigo",

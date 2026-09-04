@@ -43,6 +43,9 @@ ehthumbs.db
 $RECYCLE.BIN/
 *.log
 .idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
 
 # Local agent / IDE (not part of the app)
 .cursor/

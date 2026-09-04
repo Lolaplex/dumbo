@@ -30,11 +30,12 @@ No heavy Electron memory bloat. Zero subscription lock-in. Powered by Tauri 2, S
 
 Grab the latest installer from the **[Releases](https://github.com/Lolaplex/dumbo/releases)** page:
 
-| Platform | Installer | Architecture |
-|----------|-----------|--------------|
-| **Windows 10 / 11** | `Dumbo_0.42.0_x64-setup.exe` | 64-bit (x64) |
+| Platform | Installer | Format |
+|----------|-----------|--------|
+| **Windows 10 / 11** | `Dumbo_0.43.0_x64-setup.exe` | NSIS Setup (x64) |
+| **Windows 10 / 11** | `Dumbo_0.43.0_x64_en-US.msi` | MSI Package (x64) |
 
-1. Download and run the setup file.
+1. Download and run the setup file (or MSI package).
 2. Open **Settings** via the system tray icon or shortcut `Ctrl+,`.
 3. Select your preferred provider (e.g. **Gemini**), enter your API key, and hit **Save**.
 4. Press `Alt+Space` to start asking.
@@ -116,6 +117,7 @@ dumbo/
 
 - [x] **v0.2.0**: Overlay ask, auto-selection, session continuity, Windows keyring.
 - [x] **v0.42.0**: Multi-engine TTS screen reader (`Alt+Shift+S`), Kokoro support, settings overhaul.
+- [x] **v0.43.0**: Complete i18n localization, neutral TTS synthesis, tray crash recovery, zero-console startup.
 - [ ] **Dictation (STT)**: Dedicated push-to-talk button for voice input.
 - [ ] **Live Speech Pipeline**: Continuous voice interaction with floating pill indicator.
 - [ ] **Screen Context**: One-click screen region capture attached directly to multimodal prompts.

@@ -244,7 +244,7 @@ pub fn upsert_provider(app: AppHandle, mut provider: Provider) -> Result<Provide
         provider.id = uuid::Uuid::new_v4().to_string();
     }
     if provider.name.trim().is_empty() {
-        return Err("Name fehlt.".into());
+        return Err(crate::i18n::t(crate::i18n::app_locale(&app), "provider_name_missing").into());
     }
     let mut file = load_file(&app)?;
     if let Some(existing) = file.providers.iter_mut().find(|p| p.id == provider.id) {
@@ -263,7 +263,7 @@ pub fn delete_provider(app: AppHandle, id: String) -> Result<(), String> {
     let before = file.providers.len();
     file.providers.retain(|p| p.id != id);
     if file.providers.len() == before {
-        return Err("Provider nicht gefunden.".into());
+        return Err(crate::i18n::t(crate::i18n::app_locale(&app), "provider_not_found").into());
     }
     let _ = write_key(&id, "");
     save_file(&app, &file)?;

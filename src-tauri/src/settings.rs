@@ -499,6 +499,8 @@ pub fn save_settings(app: AppHandle, settings: Value) -> Result<AppSettings, Str
         eprintln!("Autostart Warnung: {err}");
     }
 
+    crate::overlay::update_window_titles(&app, &next.language);
+
     let _ = app.emit("settings-changed", &next);
     Ok(next)
 }

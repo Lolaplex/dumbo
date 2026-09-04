@@ -280,10 +280,12 @@ pub fn register_hotkeys(
                 }
                 Err(err) => {
                     eprintln!("TTS-Hotkey '{t_str}' nicht registrierbar: {err}");
-                    let _ = app.emit(
-                        "hotkey-error",
-                        format!("TTS-Hotkey '{t_str}' konnte vom System nicht registriert werden (evtl. belegt): {err}"),
-                    );
+                    let locale = crate::i18n::app_locale(app);
+                    let msg = match locale {
+                        crate::i18n::Locale::De => format!("TTS-Hotkey '{t_str}' konnte vom System nicht registriert werden (evtl. belegt): {err}"),
+                        crate::i18n::Locale::En => format!("TTS shortcut '{t_str}' could not be registered by the system (possibly in use): {err}"),
+                    };
+                    let _ = app.emit("hotkey-error", msg);
                 }
             }
         } else {
@@ -377,8 +379,10 @@ pub fn ensure_settings_window(app: &AppHandle) -> Result<WebviewWindow, String> 
     if let Some(existing) = app.get_webview_window(SETTINGS_LABEL) {
         return Ok(existing);
     }
+    let locale = crate::i18n::app_locale(app);
+    let title = crate::i18n::t(locale, "window_settings");
     let window = WebviewWindowBuilder::new(app, SETTINGS_LABEL, WebviewUrl::App("/settings".into()))
-        .title("Einstellungen")
+        .title(title)
         .inner_size(720.0, 760.0)
         .min_inner_size(520.0, 480.0)
         .decorations(false)
@@ -397,8 +401,10 @@ pub fn ensure_tray_menu(app: &AppHandle) -> Result<WebviewWindow, String> {
     if let Some(existing) = app.get_webview_window(TRAY_MENU_LABEL) {
         return Ok(existing);
     }
+    let locale = crate::i18n::app_locale(app);
+    let title = crate::i18n::t(locale, "window_tray_menu");
     let window = WebviewWindowBuilder::new(app, TRAY_MENU_LABEL, WebviewUrl::App("/".into()))
-        .title("Dumbo Menü")
+        .title(title)
         .inner_size(TRAY_MENU_WIDTH, TRAY_MENU_HEIGHT)
         .decorations(false)
         .transparent(true)
@@ -496,8 +502,16 @@ fn toggle_tray_menu(app: &AppHandle) {
         .map(|slot| *slot)
         .unwrap_or(TRAY_MENU_HEIGHT);
     let _ = place_tray_menu(&window, anchor, height);
-    let _ = window.show();
-    let _ = window.set_focus();
+    if window.show().is_err() {
+        let _ = window.destroy();
+        if let Ok(new_win) = ensure_tray_menu(app) {
+            let _ = place_tray_menu(&new_win, anchor, height);
+            let _ = new_win.show();
+            let _ = new_win.set_focus();
+        }
+    } else {
+        let _ = window.set_focus();
+    }
     let _ = app.emit("tray-menu-shown", ());
 
     tauri::async_runtime::spawn(async move {
@@ -516,25 +530,29 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     TrayIconBuilder::new()
         .icon(icon)
         .tooltip("Dumbo")
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
+        .on_tray_icon_event(|tray, event| match event {
+            TrayIconEvent::Click {
                 button,
-                button_state,
+                button_state: MouseButtonState::Up,
                 ..
-            } = event
-            {
-                if button_state == MouseButtonState::Up {
-                    match button {
-                        MouseButton::Left => {
-                            let _ = open_settings(tray.app_handle().clone());
-                        }
-                        MouseButton::Right => {
-                            toggle_tray_menu(tray.app_handle());
-                        }
-                        _ => {}
-                    }
+            } => match button {
+                MouseButton::Left => {
+                    let _ = open_settings(tray.app_handle().clone());
                 }
+                MouseButton::Right => {
+                    toggle_tray_menu(tray.app_handle());
+                }
+                MouseButton::Middle => {
+                    tray.app_handle().exit(0);
+                }
+            },
+            TrayIconEvent::DoubleClick {
+                button: MouseButton::Left,
+                ..
+            } => {
+                present_overlay(tray.app_handle());
             }
+            _ => {}
         })
         .build(app)?;
     Ok(())
@@ -582,7 +600,7 @@ pub fn hide_tray_menu(app: AppHandle) -> Result<(), String> {
 pub fn resize_tray_menu(app: AppHandle, height: f64) -> Result<(), String> {
     let window = app
         .get_webview_window(TRAY_MENU_LABEL)
-        .ok_or_else(|| "Tray-Menü fehlt.".to_string())?;
+        .ok_or_else(|| crate::i18n::t(crate::i18n::app_locale(&app), "tray_menu_missing").to_string())?;
     let clamped = height.max(60.0).min(420.0);
     window
         .set_size(LogicalSize::new(TRAY_MENU_WIDTH, clamped))
@@ -614,4 +632,14 @@ pub fn copy_text(app: AppHandle, text: String) -> Result<(), String> {
     app.clipboard()
         .write_text(text)
         .map_err(|e| format!("Zwischenablage nicht schreibbar: {e}"))
+}
+
+pub fn update_window_titles(app: &AppHandle, language_setting: &str) {
+    let locale = crate::i18n::resolve_locale(language_setting);
+    if let Some(settings_win) = app.get_webview_window(SETTINGS_LABEL) {
+        let _ = settings_win.set_title(crate::i18n::t(locale, "window_settings"));
+    }
+    if let Some(tray_win) = app.get_webview_window(TRAY_MENU_LABEL) {
+        let _ = tray_win.set_title(crate::i18n::t(locale, "window_tray_menu"));
+    }
 }

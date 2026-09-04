@@ -1,5 +1,6 @@
 mod chat;
 mod history;
+pub mod i18n;
 mod overlay;
 mod providers;
 mod selection;
@@ -65,7 +66,9 @@ pub fn run() {
 
     #[cfg(debug_assertions)]
     {
-        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+        if std::env::var("DUMBO_MCP_BRIDGE").map(|v| v == "1").unwrap_or(false) {
+            builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+        }
     }
 
     builder

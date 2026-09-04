@@ -100,6 +100,17 @@ export const translations = {
     hotkeyRecording: "Listening",
     hotkeyCapture: "Record",
     hotkeyPresets: "Presets:",
+    hotkeyListening: "Press key or mouse button... (Esc: Cancel)",
+
+    providerAdded: "added",
+    providerModelPlaceholder: "e.g. gpt-4o, gemini-2.0-flash",
+    ttsProviderCustomLabel: "Custom Local (Kokoro / OpenAI-compatible)",
+
+    voiceLangDe: "German",
+    voiceLangEn: "English",
+    voiceMale: "Male",
+    voiceFemale: "Female",
+    voiceMultilingual: "Multilingual",
   },
   de: {
     save: "Speichern",
@@ -200,6 +211,17 @@ export const translations = {
     hotkeyRecording: "Aktiv",
     hotkeyCapture: "Aufnehmen",
     hotkeyPresets: "Presets:",
+    hotkeyListening: "Taste oder Maustaste drücken... (Esc: Abbrechen)",
+
+    providerAdded: "hinzugefügt",
+    providerModelPlaceholder: "z. B. gpt-4o, gemini-2.0-flash",
+    ttsProviderCustomLabel: "Custom Local (Kokoro / OpenAI-kompatibel)",
+
+    voiceLangDe: "Deutsch",
+    voiceLangEn: "Englisch",
+    voiceMale: "Männlich",
+    voiceFemale: "Weiblich",
+    voiceMultilingual: "Multilingual",
   },
 } as const;
 

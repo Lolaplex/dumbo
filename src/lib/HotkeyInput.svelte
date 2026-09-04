@@ -260,7 +260,7 @@
           {#if heldModifiers.length > 0}
             {heldModifiers.join(" + ")} + ...
           {:else}
-            Taste oder Maustaste drücken... (Esc: Abbrechen)
+            {t("hotkeyListening")}
           {/if}
         </span>
       {:else if value}

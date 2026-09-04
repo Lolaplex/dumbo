@@ -121,9 +121,9 @@ struct GeminiInlineData {
 }
 
 const CONCISE_PROMPT: &str =
-    "Answer concisely. Prefer short, direct replies. Use markdown when it helps.";
+    "Answer concisely. Prefer short, direct replies. Use markdown when it helps. Always respond in the same language as the user's question or context, unless explicitly instructed otherwise.";
 const DETAILED_PROMPT: &str =
-    "Answer thoroughly. Explain reasoning, edge cases, and alternatives. Use markdown.";
+    "Answer thoroughly. Explain reasoning, edge cases, and alternatives. Use markdown. Always respond in the same language as the user's question or context, unless explicitly instructed otherwise.";
 
 fn extract_base64(data_url: &str) -> (String, String) {
     if let Some(rest) = data_url.strip_prefix("data:") {
@@ -222,7 +222,7 @@ fn extract_error(raw: &str) -> String {
     }
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        "Unbekannter API-Fehler.".to_string()
+        crate::i18n::t(crate::i18n::system_locale(), "chat_unknown_error").to_string()
     } else {
         trimmed.chars().take(240).collect()
     }
@@ -422,13 +422,18 @@ async fn run_chat(
     request: ChatRequest,
     abort: Arc<AtomicBool>,
 ) -> Result<(), String> {
+    let locale = crate::i18n::app_locale(&app);
     let provider = providers::get_provider(&app, &request.provider_id)?;
     if provider.base_url.trim().is_empty() {
-        return Err("Base-URL fehlt. Bitte in den Einstellungen eintragen.".into());
+        return Err(crate::i18n::t(locale, "chat_base_url_missing").into());
     }
     let key = providers::read_key(&provider.id)?;
     if key.trim().is_empty() && provider.kind != "ollama" && provider.kind != "lmstudio" {
-        return Err("Kein API-Key. In Settings unter Gemini einfügen und Save drücken.".into());
+        let msg = match locale {
+            crate::i18n::Locale::De => format!("Kein API-Key für '{}'. In Settings eintragen und speichern.", provider.name),
+            crate::i18n::Locale::En => format!("No API key for '{}'. Please enter it in Settings and save.", provider.name),
+        };
+        return Err(msg);
     }
     let model = if request.model.trim().is_empty() {
         if provider.model.is_empty() {

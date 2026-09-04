@@ -357,7 +357,7 @@ pub fn get_chat(app: AppHandle, id: String) -> Result<ChatDetail, String> {
                 })
             },
         )
-        .map_err(|_| "Chat nicht gefunden.".to_string())?;
+        .map_err(|_| crate::i18n::t(crate::i18n::app_locale(&app), "chat_not_found").to_string())?;
     let mut stmt = conn
         .prepare(
             "SELECT id, role, content, created_at FROM messages WHERE chat_id = ?1 ORDER BY created_at ASC",

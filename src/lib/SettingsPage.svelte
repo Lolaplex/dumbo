@@ -56,27 +56,45 @@
     { value: "Aoede", label: "Aoede" },
   ];
 
-  const elevenVoices = [
-    { value: "PhufIH7nYh2Up1uej6aY", label: "Moritz (Deutsch Männlich)" },
-    { value: "21m00Tcm4TlvDq8ikWAM", label: "Rachel (Englisch Weiblich)" },
-    { value: "AZnzlk1XvdvUeBnXmlld", label: "Domi (Englisch Weiblich)" },
-    { value: "EXAVITQu4vr4xnSDxMaL", label: "Sarah (Englisch Weiblich)" },
-    { value: "ErXwobaYiN019PkySvjV", label: "Antoni (Englisch Männlich)" },
-    { value: "MF3mGyEYCl7XYWbV9V6O", label: "Elli (Englisch Weiblich)" },
-    { value: "TxGEqnHWrfWFTfGW9XjX", label: "Josh (Englisch Männlich)" },
-    { value: "VR6AewLTigWG4xSOukaG", label: "Arnold (Englisch Männlich)" },
-    { value: "pNInz6obpgDQGcFmaJgB", label: "Adam (Englisch Männlich)" },
-    { value: "yoZ06aMxZJJ28mfd3POQ", label: "Sam (Englisch Männlich)" },
+  type VoiceMeta = {
+    value: string;
+    name: string;
+    lang: "voiceLangDe" | "voiceLangEn";
+    gender: "voiceMale" | "voiceFemale";
+    multilingual?: boolean;
+  };
+
+  const elevenVoiceSpecs: VoiceMeta[] = [
+    { value: "PhufIH7nYh2Up1uej6aY", name: "Moritz", lang: "voiceLangDe", gender: "voiceMale" },
+    { value: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", lang: "voiceLangEn", gender: "voiceFemale" },
+    { value: "AZnzlk1XvdvUeBnXmlld", name: "Domi", lang: "voiceLangEn", gender: "voiceFemale" },
+    { value: "EXAVITQu4vr4xnSDxMaL", name: "Sarah", lang: "voiceLangEn", gender: "voiceFemale" },
+    { value: "ErXwobaYiN019PkySvjV", name: "Antoni", lang: "voiceLangEn", gender: "voiceMale" },
+    { value: "MF3mGyEYCl7XYWbV9V6O", name: "Elli", lang: "voiceLangEn", gender: "voiceFemale" },
+    { value: "TxGEqnHWrfWFTfGW9XjX", name: "Josh", lang: "voiceLangEn", gender: "voiceMale" },
+    { value: "VR6AewLTigWG4xSOukaG", name: "Arnold", lang: "voiceLangEn", gender: "voiceMale" },
+    { value: "pNInz6obpgDQGcFmaJgB", name: "Adam", lang: "voiceLangEn", gender: "voiceMale" },
+    { value: "yoZ06aMxZJJ28mfd3POQ", name: "Sam", lang: "voiceLangEn", gender: "voiceMale" },
   ];
 
-  const azureVoices = [
-    { value: "de-DE-ConradNeural", label: "Conrad (Deutsch Männlich)" },
-    { value: "de-DE-KatjaNeural", label: "Katja (Deutsch Weiblich)" },
-    { value: "de-DE-FlorianMultilingualNeural", label: "Florian (Multilingual)" },
-    { value: "de-DE-SeraphinaMultilingualNeural", label: "Seraphina (Multilingual)" },
-    { value: "de-DE-AmalaNeural", label: "Amala (Deutsch Weiblich)" },
-    { value: "de-DE-KillianNeural", label: "Killian (Deutsch Männlich)" },
+  const azureVoiceSpecs: VoiceMeta[] = [
+    { value: "de-DE-ConradNeural", name: "Conrad", lang: "voiceLangDe", gender: "voiceMale" },
+    { value: "de-DE-KatjaNeural", name: "Katja", lang: "voiceLangDe", gender: "voiceFemale" },
+    { value: "de-DE-FlorianMultilingualNeural", name: "Florian", lang: "voiceLangDe", gender: "voiceMale", multilingual: true },
+    { value: "de-DE-SeraphinaMultilingualNeural", name: "Seraphina", lang: "voiceLangDe", gender: "voiceFemale", multilingual: true },
+    { value: "de-DE-AmalaNeural", name: "Amala", lang: "voiceLangDe", gender: "voiceFemale" },
+    { value: "de-DE-KillianNeural", name: "Killian", lang: "voiceLangDe", gender: "voiceMale" },
+    { value: "en-US-JennyNeural", name: "Jenny", lang: "voiceLangEn", gender: "voiceFemale" },
+    { value: "en-US-GuyNeural", name: "Guy", lang: "voiceLangEn", gender: "voiceMale" },
   ];
+
+  function formatVoice(v: VoiceMeta): { value: string; label: string } {
+    const detail = v.multilingual ? t("voiceMultilingual") : `${t(v.lang)} · ${t(v.gender)}`;
+    return { value: v.value, label: `${v.name} (${detail})` };
+  }
+
+  let elevenVoices = $derived(elevenVoiceSpecs.map(formatVoice));
+  let azureVoices = $derived(azureVoiceSpecs.map(formatVoice));
 
   let selectedChatProvider = $derived(
     providers.find((p) => p.id === settings?.activeProviderId) ?? providers[0] ?? null
@@ -267,7 +285,7 @@
       settings.activeProviderId = created.id;
       await persistSettings();
     }
-    showStatus(`${spec.name} hinzugefügt`);
+    showStatus(`${spec.name} ${t("providerAdded")}`);
   }
 
   async function removeProvider(id: string) {
@@ -428,7 +446,7 @@
                 </label>
                 <label>
                   {t("providerModel")}
-                  <input bind:value={selectedChatProvider.model} placeholder="z. B. gpt-4o, gemini-2.0-flash" onchange={() => saveProvider(selectedChatProvider)} />
+                  <input bind:value={selectedChatProvider.model} placeholder={t("providerModelPlaceholder")} onchange={() => saveProvider(selectedChatProvider)} />
                 </label>
                 <label class="wide">
                   {t("providerBaseUrl")}
@@ -508,7 +526,7 @@
               { value: "elevenlabs", label: "ElevenLabs API" },
               { value: "gemini", label: "Google Gemini API (Audio)" },
               { value: "openai", label: "OpenAI TTS (tts-1 / tts-1-hd)" },
-              { value: "custom", label: "Custom Local (Kokoro / OpenAI-kompatibel)" },
+              { value: "custom", label: t("ttsProviderCustomLabel") },
             ]}
             onchange={() => {
               if (settings) {
