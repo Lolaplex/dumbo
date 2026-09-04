@@ -1,0 +1,116 @@
+:root {
+  --bg: #0a0a0a;
+  --bg-elev: #141414;
+  --fg: #f4f4f4;
+  --mute: #8a8a8a;
+  --line: rgba(255, 255, 255, 0.1);
+  --fill: rgba(22, 22, 22, 0.92);
+  --danger: #e06c6c;
+  --ui: "Geist", "Segoe UI", sans-serif;
+  --mono: "Geist Mono", "Cascadia Code", monospace;
+  --ivory: var(--fg);
+  --ivory-dim: var(--mute);
+  --ivory-mute: #5c5c5c;
+  --brass: #f4f4f4;
+  --hairline: var(--line);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--ui);
+  color: var(--fg);
+  background: transparent;
+}
+
+html.is-overlay,
+html.is-overlay body {
+  height: auto;
+  overflow: hidden;
+  background: transparent !important;
+}
+
+html.is-settings,
+html.is-settings body {
+  height: 100%;
+  overflow: hidden;
+  color-scheme: dark;
+  background: var(--bg);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus,
+:focus-visible {
+  outline: none;
+}
+
+.shell-overlay :focus,
+.shell-overlay :focus-visible,
+.shell-overlay input,
+.shell-overlay textarea,
+.shell-overlay input:focus,
+.shell-overlay textarea:focus,
+.shell-overlay input:focus-visible,
+.shell-overlay textarea:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border: 0 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+.shell-overlay {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.shell-settings {
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.shell-settings .scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #444 transparent;
+}
+
+.shell-settings .scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.shell-settings .scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.shell-settings .scroll::-webkit-scrollbar-thumb {
+  background: #3f3f3f;
+  border-radius: 0;
+}
+
+.shell-settings .scroll::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}

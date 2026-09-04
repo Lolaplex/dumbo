@@ -1,0 +1,54 @@
+# Dependencies & build output
+node_modules/
+/build
+/.svelte-kit
+/package
+pnpm-lock.yaml
+pnpm-workspace.yaml
+
+# Tauri / Rust
+target/
+src-tauri/target/
+src-tauri/gen/
+.cargo/
+src-tauri/.cargo/
+
+# Python & virtual environments
+.venv*/
+*.venv*/
+venv/
+env/
+__pycache__/
+*.py[cod]
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Local data, databases & audio files
+*.db
+*.sqlite
+*.sqlite3
+*.wav
+*.mp3
+*.flac
+*.ogg
+
+# OS & editor
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.log
+.idea/
+
+# Local agent / IDE (not part of the app)
+.cursor/
+.agents/
+
+# Tooling caches
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+.netlify
