@@ -1,11 +1,8 @@
-name: CI
+name: CI Test Matrix
 
 on:
   pull_request:
     branches: [main, dev]
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 concurrency:

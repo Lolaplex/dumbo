@@ -537,7 +537,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } => match button {
                 MouseButton::Left => {
-                    let _ = open_settings(tray.app_handle().clone());
+                    on_hotkey(tray.app_handle());
                 }
                 MouseButton::Right => {
                     toggle_tray_menu(tray.app_handle());
@@ -546,12 +546,6 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                     tray.app_handle().exit(0);
                 }
             },
-            TrayIconEvent::DoubleClick {
-                button: MouseButton::Left,
-                ..
-            } => {
-                present_overlay(tray.app_handle());
-            }
             _ => {}
         })
         .build(app)?;
