@@ -72,5 +72,13 @@
         "sidebarImage": "icons/nsis-sidebar.bmp"
       }
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMzMUEzMUE4N0Y0OEZGOTAKUldTUS8waC9xREVhTTgxZmdGWmVxL3d2cDM5cVIrV2tnMFFaOWUydEhvN3NTcjN3YTN5amFGbmIK",
+      "endpoints": [
+        "https://github.com/Lolaplex/dumbo/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

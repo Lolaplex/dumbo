@@ -28,6 +28,7 @@ enigo = "0.3"
 rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 tauri-plugin-mcp-bridge = "0.11"
+tauri-plugin-updater = "2"
 rodio = { version = "0.19", features = ["symphonia-mp3", "symphonia-wav"] }
 base64 = "0.22"
 

@@ -4,6 +4,7 @@
   "description": "Minimal Windows AI desktop overlay with instant hotkey, text selection, and TTS",
   "type": "module",
   "scripts": {
+    "predev": "node -e \"if(process.platform==='win32'){try{require('child_process').execSync('taskkill /F /IM dumbo.exe',{stdio:'ignore'})}catch(e){}}\"",
     "dev": "vite dev",
     "prebuild": "node -e \"if(process.platform==='win32'){try{require('child_process').execSync('taskkill /F /IM dumbo.exe',{stdio:'ignore'})}catch(e){}}\"",
     "build": "vite build",

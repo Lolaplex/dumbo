@@ -111,3 +111,11 @@ export type Exchange = {
   prompt: string;
   answer: string;
 };
+
+export type UpdateInfo = {
+  available: boolean;
+  current_version: string;
+  version?: string | null;
+  date?: string | null;
+  body?: string | null;
+};

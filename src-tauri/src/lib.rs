@@ -6,6 +6,7 @@ mod providers;
 mod selection;
 mod settings;
 mod tts;
+mod updater;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -41,6 +42,8 @@ pub fn run() {
             tts::test_tts,
             tts::get_local_tts_status,
             tts::get_tts_state,
+            updater::check_for_updates,
+            updater::install_update,
         ]);
 
     #[cfg(desktop)]
@@ -53,6 +56,7 @@ pub fn run() {
                 tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                 None,
             ))
+            .plugin(tauri_plugin_updater::Builder::new().build())
             .plugin(
                 tauri_plugin_global_shortcut::Builder::new()
                     .with_handler(|app, shortcut, event| {
@@ -85,6 +89,7 @@ pub fn run() {
             history::init_db(app.handle())?;
             tts::init(app.handle());
             let loaded = settings::load(app.handle())?;
+            let _ = settings::apply_autostart(app.handle(), loaded.autostart);
             if let Err(err) = overlay::register_hotkeys(app.handle(), &loaded.hotkey, &loaded.tts_hotkey) {
                 eprintln!("Hotkeys nicht aktiv: {err}");
             }
