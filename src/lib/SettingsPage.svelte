@@ -38,6 +38,34 @@
   let ttsError = $state("");
   let customStatus = $state<import("$lib/types").LocalTtsStatus | null>(null);
 
+  let updateStatus = $state<import("$lib/types").UpdateInfo | null>(null);
+  let updateChecking = $state(false);
+  let updateDownloading = $state(false);
+  let updateErrorMsg = $state("");
+
+  async function triggerCheckUpdates() {
+    updateChecking = true;
+    updateErrorMsg = "";
+    try {
+      updateStatus = await ipc.checkForUpdates();
+    } catch (e: any) {
+      updateErrorMsg = typeof e === "string" ? e : (e?.message || t("updateError"));
+    } finally {
+      updateChecking = false;
+    }
+  }
+
+  async function triggerInstallUpdate() {
+    updateDownloading = true;
+    updateErrorMsg = "";
+    try {
+      await ipc.installUpdate();
+    } catch (e: any) {
+      updateErrorMsg = typeof e === "string" ? e : (e?.message || t("updateError"));
+      updateDownloading = false;
+    }
+  }
+
 
   const openaiVoices = [
     { value: "alloy", label: "Alloy" },
@@ -244,7 +272,7 @@
     }
   }
 
-  async function addPreset(preset: "openrouter" | "gemini" | "openai" | "ollama") {
+  async function addPreset(preset: "openrouter" | "gemini" | "openai" | "ollama" | "claude") {
     let spec = {
       id: "",
       name: "OpenRouter",
@@ -260,6 +288,14 @@
         kind: "gemini",
         baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
         model: "gemini-3.5-flash-lite",
+      };
+    } else if (preset === "claude") {
+      spec = {
+        id: "",
+        name: "Claude",
+        kind: "anthropic",
+        baseUrl: "https://api.anthropic.com/v1",
+        model: "claude-3-7-sonnet-latest",
       };
     } else if (preset === "openai") {
       spec = {
@@ -393,9 +429,9 @@
   <div class="scroll">
     <main class="page">
     {#if settings}
-      <!-- SECTION 1: CHAT & MODELLE -->
+      <!-- SECTION 1: CHAT -->
       <section>
-        <h2>{t("chatAndModel")}</h2>
+        <h2>{t("sectionChat")}</h2>
         <label>
           {t("overlayHotkey")}
           <HotkeyInput bind:value={settings.hotkey} placeholder={t("overlayHotkeyPlaceholder")} onchange={() => persistSettings()} />
@@ -410,12 +446,8 @@
           <span>{t("historySave")}</span>
           <Switch bind:checked={settings.historyEnabled} onchange={() => persistSettings()} />
         </label>
-        <label class="check">
-          <span>{t("autostart")}</span>
-          <Switch bind:checked={settings.autostart} onchange={() => persistSettings()} />
-        </label>
 
-        <div style="margin-top: 1.2rem;">
+        <div style="margin-top: 0.8rem;">
           <div class="row" style="margin-bottom: 0.5rem;">
             <label style="flex: 1; margin-bottom: 0;">
               {t("activeProvider")}
@@ -430,6 +462,7 @@
           <div class="row" style="margin-top: 0.4rem; margin-bottom: 0.8rem;">
             <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
               <button type="button" class="ghost small" onclick={() => addPreset("gemini")}>+ Gemini</button>
+              <button type="button" class="ghost small" onclick={() => addPreset("claude")}>+ Claude</button>
               <button type="button" class="ghost small" onclick={() => addPreset("openai")}>+ OpenAI</button>
               <button type="button" class="ghost small" onclick={() => addPreset("openrouter")}>+ OpenRouter</button>
               <button type="button" class="ghost small" onclick={() => addPreset("ollama")}>+ Ollama</button>
@@ -474,27 +507,6 @@
             </article>
           {/if}
         </div>
-
-        <div class="row" style="margin-top: 1.2rem; align-items: center;">
-          <label style="flex: 1; margin-bottom: 0;">
-            {t("languageLabel")}
-            <Select
-              bind:value={settings.language}
-              options={[
-                { value: "auto", label: t("languageAuto") },
-                { value: "en", label: t("languageEn") },
-                { value: "de", label: t("languageDe") },
-              ]}
-              onchange={() => {
-                if (settings) {
-                  applyLanguage(settings.language);
-                  persistSettings();
-                }
-              }}
-            />
-          </label>
-        </div>
-        <p class="note" style="margin-top: 0.35rem;">{t("languageNote")}</p>
       </section>
 
       <!-- DIVIDER -->
@@ -712,7 +724,82 @@
       <!-- DIVIDER -->
       <div class="section-divider"></div>
 
-      <!-- SECTION 3: HISTORY -->
+      <!-- SECTION 3: GENERAL -->
+      <section>
+        <h2>{t("sectionGeneral")}</h2>
+
+        <label class="check">
+          <span>{t("autostart")}</span>
+          <Switch bind:checked={settings.autostart} onchange={() => persistSettings()} />
+        </label>
+
+        <div class="row" style="align-items: center; margin-top: 0.8rem;">
+          <label style="flex: 1; margin-bottom: 0;">
+            {t("languageLabel")}
+            <Select
+              bind:value={settings.language}
+              options={[
+                { value: "auto", label: t("languageAuto") },
+                { value: "en", label: t("languageEn") },
+                { value: "de", label: t("languageDe") },
+              ]}
+              onchange={() => {
+                if (settings) {
+                  applyLanguage(settings.language);
+                  persistSettings();
+                }
+              }}
+            />
+          </label>
+        </div>
+        <p class="note" style="margin-top: 0.2rem;">{t("languageNote")}</p>
+
+        <div class="update-card" style="margin-top: 0.8rem;">
+          <div class="row" style="align-items: center; justify-content: space-between;">
+            <div>
+              <span style="font-weight: 500; font-size: 0.9rem;">{t("appVersion")}</span>
+              <span class="version-badge">v0.44.0</span>
+            </div>
+            {#if updateStatus?.available}
+              <button type="button" class="primary small" disabled={updateDownloading} onclick={triggerInstallUpdate}>
+                {#if updateDownloading}
+                  <span class="tts-spinner" aria-hidden="true" style="margin-right: 0.3rem;"></span>
+                  {t("updateDownloading")}
+                {:else}
+                  {t("updateDownload")} (v{updateStatus.version})
+                {/if}
+              </button>
+            {:else}
+              <button type="button" class="ghost small" disabled={updateChecking} onclick={triggerCheckUpdates}>
+                {#if updateChecking}
+                  <span class="tts-spinner" aria-hidden="true" style="margin-right: 0.3rem;"></span>
+                  {t("checkingUpdates")}
+                {:else}
+                  {t("checkUpdates")}
+                {/if}
+              </button>
+            {/if}
+          </div>
+          {#if updateStatus && !updateStatus.available && !updateChecking}
+            <p class="note" style="margin-top: 0.4rem; color: rgba(255,255,255,0.7);">{t("updateUpToDate")}</p>
+          {:else if updateStatus?.available}
+            <p class="note" style="margin-top: 0.4rem; color: #a5b4fc;">
+              {t("updateAvailable")}: v{updateStatus.version}
+              {#if updateStatus.body}
+                — {updateStatus.body}
+              {/if}
+            </p>
+          {/if}
+          {#if updateErrorMsg}
+            <p class="note" style="margin-top: 0.4rem; color: #f87171;">{updateErrorMsg}</p>
+          {/if}
+        </div>
+      </section>
+
+      <!-- DIVIDER -->
+      <div class="section-divider"></div>
+
+      <!-- SECTION 4: HISTORY -->
       <section>
         <div class="row">
           <h2>{t("historyTitle")}</h2>
@@ -905,6 +992,20 @@
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 8px;
     padding: 0.9rem;
+  }
+
+  .update-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 0.8rem 0.9rem;
+  }
+
+  .version-badge {
+    font-size: 0.8rem;
+    color: var(--mute);
+    margin-left: 0.5rem;
+    font-family: monospace;
   }
 
   .badge {

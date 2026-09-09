@@ -1,4 +1,4 @@
-export type ProviderKind = "gemini" | "openai" | "ollama" | "lmstudio" | string;
+export type ProviderKind = "gemini" | "openai" | "ollama" | "lmstudio" | "anthropic" | string;
 
 export type ProviderView = {
   id: string;
@@ -110,4 +110,12 @@ export type Exchange = {
   model: string;
   prompt: string;
   answer: string;
+};
+
+export type UpdateInfo = {
+  available: boolean;
+  current_version: string;
+  version?: string | null;
+  date?: string | null;
+  body?: string | null;
 };

@@ -283,6 +283,7 @@
 
   function insertText(text: string) {
     if (cursor >= 0) adoptBrowsedChat();
+    error = "";
     const el = inputEl;
     const start = el?.selectionStart ?? query.length;
     const end = el?.selectionEnd ?? query.length;
@@ -298,6 +299,7 @@
 
   function onInput() {
     if (cursor >= 0) adoptBrowsedChat();
+    error = "";
     syncCaret();
   }
 
@@ -618,6 +620,7 @@
 
     void listen("overlay-hidden", () => {
       hiddenAt = Date.now();
+      error = "";
       scheduleExpiry();
     }).then((unlisten) => unsubs.push(unlisten));
 
@@ -634,6 +637,7 @@
       selection = event.payload.selection;
       clipboard = event.payload.clipboard;
       copied = false;
+      error = "";
       expireIfStale();
       await loadBase();
       await tick();
@@ -900,7 +904,14 @@
         {/if}
       {/each}
       {#if error}
-        <p class="err">{error}</p>
+        <div class="err-box">
+          <svg class="err-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="8" cy="8" r="6.5" />
+            <line x1="8" y1="5" x2="8" y2="8.5" />
+            <circle cx="8" cy="11.5" r="0.5" fill="currentColor" />
+          </svg>
+          <span class="err-text">{error}</span>
+        </div>
       {/if}
       {#if lastAssistant && !streaming}
         <button class="copy" class:done={copied} type="button" onclick={copyAnswer} aria-label={t("copyAnswer")}>
@@ -1167,10 +1178,34 @@
     text-align: left;
   }
 
-  .err {
-    margin: 10px 0 0;
-    color: var(--danger);
-    font-size: 0.92rem;
+  .err-box {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 12px;
+    margin-top: 10px;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.22);
+    border-radius: 12px;
+    color: #fca5a5;
+    font-size: 0.86rem;
+    line-height: 1.4;
+  }
+
+  .err-box:first-child {
+    margin-top: 0;
+  }
+
+  .err-icon {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
+    color: #ef4444;
+  }
+
+  .err-text {
+    flex: 1;
+    word-break: break-word;
   }
 
   .badge {

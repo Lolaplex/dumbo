@@ -451,17 +451,25 @@ pub fn load(app: &AppHandle) -> Result<AppSettings, String> {
             return Ok(settings);
         }
     };
-    match settings_from_json(&raw) {
-        Ok(settings) => Ok(settings),
+    let mut settings = match settings_from_json(&raw) {
+        Ok(settings) => settings,
         Err(e) => {
             eprintln!("Settings JSON ungültig ({e}), Original bleibt unangetastet.");
             let bak = path.with_extension("json.bak");
             let _ = fs::copy(&path, &bak);
             let mut settings = AppSettings::default();
             settings.normalize();
-            Ok(settings)
+            settings
+        }
+    };
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        if let Ok(enabled) = app.autolaunch().is_enabled() {
+            settings.autostart = enabled;
         }
     }
+    Ok(settings)
 }
 
 fn save_to_disk(path: &PathBuf, settings: &AppSettings) -> Result<(), String> {
@@ -505,7 +513,7 @@ pub fn save_settings(app: AppHandle, settings: Value) -> Result<AppSettings, Str
     Ok(next)
 }
 
-fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
+pub fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
     #[cfg(desktop)]
     {
         use tauri_plugin_autostart::ManagerExt;
