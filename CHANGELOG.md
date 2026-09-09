@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Settings UI restructured into dedicated General, Chat, Text-to-Speech, and History sections.
 - Upgraded package versioning to 0.44.0 across frontend and Rust crates.
+- NSIS installer defaults updated: smooth in-place upgrade without uninstalling previous versions by default, and Desktop shortcut unchecked by default while keeping "Run Dumbo" checked.
 
 ### Fixed
 - Stale background process collisions on dev launch with predev task cleanup.

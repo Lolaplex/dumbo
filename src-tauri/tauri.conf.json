@@ -64,6 +64,7 @@
     ],
     "windows": {
       "nsis": {
+        "template": "installer.nsi",
         "installMode": "currentUser",
         "languages": ["German", "English"],
         "displayLanguageSelector": false,
