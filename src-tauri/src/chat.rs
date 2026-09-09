@@ -326,6 +326,28 @@ fn gemini_chunk_text(data: &str) -> Result<Option<String>, String> {
     Ok(if out.is_empty() { None } else { Some(out) })
 }
 
+fn anthropic_chunk_text(data: &str) -> Result<Option<String>, String> {
+    let value: Value =
+        serde_json::from_str(data).map_err(|e| format!("Stream-JSON ungültig: {e}"))?;
+    if let Some(message) = value.pointer("/error/message").and_then(Value::as_str) {
+        return Err(message.to_string());
+    }
+    let event_type = value.get("type").and_then(Value::as_str).unwrap_or("");
+    if event_type == "content_block_delta" {
+        if let Some(text) = value.pointer("/delta/text").and_then(Value::as_str) {
+            return Ok(Some(text.to_string()));
+        }
+    }
+    Ok(None)
+}
+
+fn parse_data_url(data_url: &str) -> Option<(String, String)> {
+    let stripped = data_url.strip_prefix("data:")?;
+    let (mime, rest) = stripped.split_once(';')?;
+    let b64 = rest.strip_prefix("base64,")?;
+    Some((mime.to_string(), b64.to_string()))
+}
+
 fn take_sse_events(buffer: &mut String, flush: bool) -> Vec<String> {
     if buffer.contains('\r') {
         *buffer = buffer.replace("\r\n", "\n").replace('\r', "\n");
@@ -454,7 +476,21 @@ async fn run_chat(
     let system = system_prompt(request.detailed);
     let prior = sanitize_prior(&request.prior);
 
-    let answer = if use_gemini_native(&provider) {
+    let answer = if provider.kind == "anthropic" || provider.base_url.contains("api.anthropic.com") {
+        stream_anthropic(
+            &app,
+            &provider,
+            &key,
+            &model,
+            system,
+            &prior,
+            &user,
+            &request.attachments,
+            &request.request_id,
+            &abort,
+        )
+        .await?
+    } else if use_gemini_native(&provider) {
         stream_gemini(
             &app,
             &provider,
@@ -494,6 +530,88 @@ async fn run_chat(
         },
     );
     Ok(())
+}
+
+async fn stream_anthropic(
+    app: &AppHandle,
+    provider: &Provider,
+    key: &str,
+    model: &str,
+    system: &str,
+    prior: &[ChatMessage],
+    user: &str,
+    attachments: &[ChatAttachment],
+    request_id: &str,
+    abort: &AtomicBool,
+) -> Result<String, String> {
+    let mut messages: Vec<serde_json::Value> = Vec::with_capacity(prior.len() + 1);
+    for item in prior {
+        let role = if item.role == "assistant" { "assistant" } else { "user" };
+        messages.push(serde_json::json!({
+            "role": role,
+            "content": item.content,
+        }));
+    }
+
+    let image_attachments: Vec<&ChatAttachment> = attachments
+        .iter()
+        .filter(|a| a.kind == "image" && a.data_url.is_some())
+        .collect();
+
+    let user_content = if image_attachments.is_empty() {
+        serde_json::json!(user)
+    } else {
+        let mut parts = vec![serde_json::json!({
+            "type": "text",
+            "text": user,
+        })];
+        for att in image_attachments {
+            if let Some(ref data_url) = att.data_url {
+                if let Some((mime, b64)) = parse_data_url(data_url) {
+                    parts.push(serde_json::json!({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": mime,
+                            "data": b64,
+                        }
+                    }));
+                }
+            }
+        }
+        serde_json::json!(parts)
+    };
+
+    messages.push(serde_json::json!({
+        "role": "user",
+        "content": user_content,
+    }));
+
+    let body = serde_json::json!({
+        "model": model,
+        "max_tokens": 4096,
+        "system": system,
+        "messages": messages,
+        "stream": true,
+    });
+
+    let base = provider.base_url.trim_end_matches('/');
+    let url = if base.ends_with("/messages") {
+        base.to_string()
+    } else {
+        format!("{base}/messages")
+    };
+
+    let builder = http_client()?
+        .post(&url)
+        .header("x-api-key", key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .header("Accept", "text/event-stream")
+        .header("Cache-Control", "no-cache")
+        .json(&body);
+
+    read_sse_stream(app, builder, request_id, abort, anthropic_chunk_text).await
 }
 
 async fn stream_openai(
@@ -725,9 +843,17 @@ fn persist_if_enabled(
 #[cfg(test)]
 mod tests {
     use super::{
-        assemble_user, gemini_chunk_text, gemini_stream_url, openai_chunk_text, sanitize_prior,
-        take_sse_events, PriorMessage,
+        anthropic_chunk_text, assemble_user, gemini_chunk_text, gemini_stream_url,
+        openai_chunk_text, sanitize_prior, take_sse_events, PriorMessage,
     };
+
+    #[test]
+    fn anthropic_reads_content_block_delta() {
+        let delta = r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello Claude"}}"#;
+        assert_eq!(anthropic_chunk_text(delta).unwrap(), Some("Hello Claude".into()));
+        let start = r#"{"type":"message_start"}"#;
+        assert_eq!(anthropic_chunk_text(start).unwrap(), None);
+    }
 
     #[test]
     fn assemble_plain_prompt_without_headers() {

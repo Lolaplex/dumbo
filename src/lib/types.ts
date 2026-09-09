@@ -1,4 +1,4 @@
-export type ProviderKind = "gemini" | "openai" | "ollama" | "lmstudio" | string;
+export type ProviderKind = "gemini" | "openai" | "ollama" | "lmstudio" | "anthropic" | string;
 
 export type ProviderView = {
   id: string;

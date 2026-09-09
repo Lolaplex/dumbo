@@ -155,6 +155,13 @@ fn defaults() -> Vec<Provider> {
             model: GEMINI_MODEL.into(),
         },
         Provider {
+            id: "claude".into(),
+            name: "Claude".into(),
+            kind: "anthropic".into(),
+            base_url: "https://api.anthropic.com/v1".into(),
+            model: "claude-3-7-sonnet-latest".into(),
+        },
+        Provider {
             id: "openai".into(),
             name: "OpenAI / Custom".into(),
             kind: "openai".into(),

@@ -272,7 +272,7 @@
     }
   }
 
-  async function addPreset(preset: "openrouter" | "gemini" | "openai" | "ollama") {
+  async function addPreset(preset: "openrouter" | "gemini" | "openai" | "ollama" | "claude") {
     let spec = {
       id: "",
       name: "OpenRouter",
@@ -288,6 +288,14 @@
         kind: "gemini",
         baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
         model: "gemini-3.5-flash-lite",
+      };
+    } else if (preset === "claude") {
+      spec = {
+        id: "",
+        name: "Claude",
+        kind: "anthropic",
+        baseUrl: "https://api.anthropic.com/v1",
+        model: "claude-3-7-sonnet-latest",
       };
     } else if (preset === "openai") {
       spec = {
@@ -450,7 +458,7 @@
           <div class="row" style="align-items: center; justify-content: space-between;">
             <div>
               <span style="font-weight: 500; font-size: 0.9rem;">{t("appVersion")}</span>
-              <span class="version-badge">v0.43.0</span>
+              <span class="version-badge">v0.44.0</span>
             </div>
             {#if updateStatus?.available}
               <button type="button" class="primary small" disabled={updateDownloading} onclick={triggerInstallUpdate}>
@@ -529,6 +537,7 @@
           <div class="row" style="margin-top: 0.4rem; margin-bottom: 0.8rem;">
             <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
               <button type="button" class="ghost small" onclick={() => addPreset("gemini")}>+ Gemini</button>
+              <button type="button" class="ghost small" onclick={() => addPreset("claude")}>+ Claude</button>
               <button type="button" class="ghost small" onclick={() => addPreset("openai")}>+ OpenAI</button>
               <button type="button" class="ghost small" onclick={() => addPreset("openrouter")}>+ OpenRouter</button>
               <button type="button" class="ghost small" onclick={() => addPreset("ollama")}>+ Ollama</button>
