@@ -462,7 +462,16 @@ pub fn load(app: &AppHandle) -> Result<AppSettings, String> {
             settings
         }
     };
-    #[cfg(desktop)]
+    #[cfg(windows)]
+    {
+        use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
+        use winreg::RegKey;
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        if let Ok(run_key) = hkcu.open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_READ) {
+            settings.autostart = run_key.get_value::<String, _>("Dumbo").is_ok();
+        }
+    }
+    #[cfg(all(desktop, not(windows)))]
     {
         use tauri_plugin_autostart::ManagerExt;
         if let Ok(enabled) = app.autolaunch().is_enabled() {
@@ -513,13 +522,56 @@ pub fn save_settings(app: AppHandle, settings: Value) -> Result<AppSettings, Str
     Ok(next)
 }
 
+#[cfg(windows)]
+pub fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    use winreg::enums::RegType::REG_BINARY;
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE};
+    use winreg::{RegKey, RegValue};
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let run_key = hkcu
+        .open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_SET_VALUE)
+        .map_err(|e| format!("Registry Run key nicht zugreifbar: {e}"))?;
+
+    if enabled {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let cmd = format!("\"{}\"", exe.to_string_lossy());
+        run_key
+            .set_value("Dumbo", &cmd)
+            .map_err(|e| format!("Autostart aktivieren fehlgeschlagen: {e}"))?;
+
+        if let Ok(approved_key) = hkcu.open_subkey_with_flags(
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run",
+            KEY_SET_VALUE,
+        ) {
+            let enabled_bytes: [u8; 12] = [
+                0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            ];
+            let _ = approved_key.set_raw_value(
+                "Dumbo",
+                &RegValue {
+                    vtype: REG_BINARY,
+                    bytes: enabled_bytes.to_vec(),
+                },
+            );
+        }
+    } else {
+        let _ = run_key.delete_value("Dumbo");
+    }
+    let _ = app;
+    Ok(())
+}
+
+#[cfg(not(windows))]
 pub fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
     #[cfg(desktop)]
     {
         use tauri_plugin_autostart::ManagerExt;
         let launcher = app.autolaunch();
         if enabled {
-            launcher.enable().map_err(|e| format!("Autostart fehlgeschlagen: {e}"))?;
+            launcher
+                .enable()
+                .map_err(|e| format!("Autostart fehlgeschlagen: {e}"))?;
         } else {
             launcher
                 .disable()
