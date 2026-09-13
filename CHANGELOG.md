@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.1] - 2026-09-13
+
+### Fixed
+- Windows Autostart boot launch by replacing unquoted `auto-launch` path with native `winreg` registry integration and explicit quotation.
+- Resolved security vulnerability in dependency graph by overriding `cookie` to `^0.7.2`.
+
+### Changed
+- Streamlined repository footprint by removing unused mobile and store branding assets.
+- Optimized CI workflows to execute fast (~18s) lint/build validation strictly on pull requests.
+
 ## [0.44.0] - 2026-09-09
 
 ### Added
