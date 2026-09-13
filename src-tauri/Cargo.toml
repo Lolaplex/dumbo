@@ -39,3 +39,4 @@ tauri-plugin-autostart = "2"
 
 [target.'cfg(windows)'.dependencies]
 uiautomation = "0.4"
+winreg = "0.52"
