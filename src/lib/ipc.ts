@@ -11,6 +11,8 @@ import type {
 export const ipc = {
   hideOverlay: () => invoke<void>("hide_overlay_cmd"),
   setOverlayHeight: (height: number) => invoke<void>("set_overlay_height", { height }),
+  beginOverlayDrag: () => invoke<void>("begin_overlay_drag"),
+  endOverlayDrag: () => invoke<void>("end_overlay_drag"),
   openSettings: () => invoke<void>("open_settings"),
   hideTrayMenu: () => invoke<void>("hide_tray_menu"),
   resizeTrayMenu: (height: number) => invoke<void>("resize_tray_menu", { height }),

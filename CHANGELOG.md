@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Overlay can be dragged via a hover-only handle; the parked spot is stored as work-area fractions and restored on that monitor.
+
 ## [0.44.0] - 2026-09-09
 
 ### Added

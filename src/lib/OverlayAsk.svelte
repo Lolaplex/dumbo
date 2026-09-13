@@ -737,6 +737,20 @@
     }
   }}
 >
+  <div
+    class="grab"
+    data-tauri-drag-region
+    role="button"
+    tabindex="-1"
+    aria-label={t("overlayGrabAria")}
+    title={t("overlayGrabAria")}
+    onpointerdown={() => {
+      void ipc.beginOverlayDrag();
+    }}
+    onpointerup={() => {
+      void ipc.endOverlayDrag();
+    }}
+  ></div>
   <div class="pill" class:has-attachments={attachments.length > 0} onwheel={onWheel}>
     {#if attachments.length > 0}
       <div class="attachments-row">
@@ -929,8 +943,51 @@
   /* Padding must exceed the largest shadow extent so the blur fades out
      inside the transparent window instead of being clipped rectangular. */
   .stage {
+    position: relative;
     padding: 22px 30px 38px;
     background: transparent;
+  }
+
+  .grab {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 64px;
+    height: 14px;
+    z-index: 5;
+    cursor: grab;
+    user-select: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .stage:hover .grab,
+  .grab:focus-visible,
+  .grab:active {
+    opacity: 1;
+  }
+
+  .grab:active {
+    cursor: grabbing;
+  }
+
+  .grab::after {
+    content: "";
+    display: block;
+    width: 36px;
+    height: 4px;
+    margin: 5px auto 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22);
+    pointer-events: none;
+  }
+
+  .grab:hover::after {
+    background: rgba(255, 255, 255, 0.38);
   }
 
   .pill {

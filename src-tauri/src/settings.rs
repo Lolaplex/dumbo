@@ -243,6 +243,16 @@ pub struct AppSettings {
     pub tts_azure_region_setting: String,
     #[serde(default = "default_language")]
     pub language: String,
+    #[serde(default)]
+    pub overlay_anchored: bool,
+    #[serde(default = "default_overlay_fx")]
+    pub overlay_fx: f64,
+    #[serde(default = "default_overlay_fy")]
+    pub overlay_fy: f64,
+    #[serde(default)]
+    pub overlay_last_x: Option<i32>,
+    #[serde(default)]
+    pub overlay_last_y: Option<i32>,
 }
 
 fn default_hotkey() -> String {
@@ -308,6 +318,20 @@ fn default_azure_tts_region() -> String {
 fn default_language() -> String {
     "auto".to_string()
 }
+fn default_overlay_fx() -> f64 {
+    0.5
+}
+fn default_overlay_fy() -> f64 {
+    0.5
+}
+
+fn clamp_unit(value: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        0.5
+    }
+}
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -336,6 +360,11 @@ impl Default for AppSettings {
             tts_azure_voice: DEFAULT_AZURE_TTS_VOICE.to_string(),
             tts_azure_region_setting: DEFAULT_AZURE_TTS_REGION.to_string(),
             language: default_language(),
+            overlay_anchored: false,
+            overlay_fx: default_overlay_fx(),
+            overlay_fy: default_overlay_fy(),
+            overlay_last_x: None,
+            overlay_last_y: None,
         }
     }
 }
@@ -386,6 +415,8 @@ impl AppSettings {
             }
         }
         self.tts_azure_region = self.tts_azure_region_setting.clone();
+        self.overlay_fx = clamp_unit(self.overlay_fx);
+        self.overlay_fy = clamp_unit(self.overlay_fy);
 
         // Sync active tts_voice and tts_model depending on selected provider
         match self.tts_provider.to_lowercase().as_str() {
@@ -479,6 +510,21 @@ pub fn load(app: &AppHandle) -> Result<AppSettings, String> {
         }
     }
     Ok(settings)
+}
+
+pub fn patch<F>(app: &AppHandle, emit: bool, f: F) -> Result<AppSettings, String>
+where
+    F: FnOnce(&mut AppSettings),
+{
+    let path = settings_path(app)?;
+    let mut next = load(app)?;
+    f(&mut next);
+    next.normalize();
+    save_to_disk(&path, &next)?;
+    if emit {
+        let _ = app.emit("settings-changed", &next);
+    }
+    Ok(next)
 }
 
 fn save_to_disk(path: &PathBuf, settings: &AppSettings) -> Result<(), String> {
@@ -611,5 +657,16 @@ mod tests {
         assert_eq!(s.hotkey, "ctrl+q");
         assert!(s.history_enabled);
         assert_eq!(s.language, "auto");
+        assert!(!s.overlay_anchored);
+        assert_eq!(s.overlay_fx, 0.5);
+        assert_eq!(s.overlay_fy, 0.5);
+        assert_eq!(s.overlay_last_x, None);
+    }
+
+    #[test]
+    fn overlay_fractions_clamp() {
+        let s = settings_from_json(r#"{"overlayFx": 1.8, "overlayFy": -0.2}"#).expect("parse");
+        assert_eq!(s.overlay_fx, 1.0);
+        assert_eq!(s.overlay_fy, 0.0);
     }
 }

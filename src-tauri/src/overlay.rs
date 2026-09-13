@@ -1,8 +1,8 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
-    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindow,
+    AppHandle, Emitter, LogicalSize, Manager, Monitor, PhysicalPosition, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -18,6 +18,11 @@ const TRAY_MENU_HEIGHT: f64 = 176.0;
 const TRAY_MENU_GAP: f64 = 8.0;
 
 static OPENING_SETTINGS: AtomicBool = AtomicBool::new(false);
+static POSITIONING: AtomicBool = AtomicBool::new(false);
+static POSITIONING_GEN: AtomicU64 = AtomicU64::new(0);
+static OVERLAY_DRAGGING: AtomicBool = AtomicBool::new(false);
+static DRAG_GEN: AtomicU64 = AtomicU64::new(0);
+static DRAG_MOVED: AtomicBool = AtomicBool::new(false);
 /// Physical cursor position of the tray click, so the popup can be re-anchored
 /// after the frontend reports its real height.
 static TRAY_ANCHOR: Mutex<Option<(f64, f64)>> = Mutex::new(None);
@@ -40,27 +45,233 @@ fn overlay_visible(app: &AppHandle) -> bool {
         .unwrap_or(false)
 }
 
-pub fn position_overlay(app: &AppHandle) -> Result<(), String> {
-    let window = overlay(app)?;
-    let cursor = window.cursor_position().map_err(|e| e.to_string())?;
-    let monitor = window
-        .monitor_from_point(cursor.x, cursor.y)
+fn clamp_unit(value: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        0.5
+    }
+}
+
+pub(crate) fn axis_pos(origin: f64, span: f64, win: f64, frac: f64) -> f64 {
+    let travel = (span - win).max(0.0);
+    origin + travel * clamp_unit(frac)
+}
+
+pub(crate) fn axis_frac(origin: f64, span: f64, win: f64, pos: f64) -> f64 {
+    let travel = span - win;
+    if travel <= 0.0 {
+        return 0.5;
+    }
+    clamp_unit((pos - origin) / travel)
+}
+
+fn overlay_size_px(window: &WebviewWindow, scale: f64) -> (f64, f64) {
+    window
+        .outer_size()
+        .ok()
+        .map(|size| (size.width as f64, size.height as f64))
+        .filter(|(w, h)| *w > 1.0 && *h > 1.0)
+        .unwrap_or((OVERLAY_WIDTH * scale, OVERLAY_MIN_HEIGHT * scale))
+}
+
+fn monitor_fallback(window: &WebviewWindow) -> Option<Monitor> {
+    window
+        .current_monitor()
         .ok()
         .flatten()
-        .or_else(|| window.current_monitor().ok().flatten())
         .or_else(|| window.primary_monitor().ok().flatten())
-        .ok_or_else(|| "Kein Monitor gefunden.".to_string())?;
+}
 
+fn monitor_from_origin(window: &WebviewWindow, origin: (i32, i32)) -> Option<Monitor> {
+    let x = origin.0 as f64 + 8.0;
+    let y = origin.1 as f64 + 8.0;
+    window
+        .monitor_from_point(x, y)
+        .ok()
+        .flatten()
+        .or_else(|| {
+            window.available_monitors().ok().and_then(|monitors| {
+                monitors.into_iter().find(|monitor| {
+                    let area = monitor.work_area();
+                    area.position.x == origin.0 && area.position.y == origin.1
+                })
+            })
+        })
+}
+
+fn cursor_monitor(window: &WebviewWindow) -> Option<Monitor> {
+    window
+        .cursor_position()
+        .ok()
+        .and_then(|pos| window.monitor_from_point(pos.x, pos.y).ok().flatten())
+        .or_else(|| monitor_fallback(window))
+}
+
+fn persist_overlay_anchor_from_window(app: &AppHandle) -> Result<(), String> {
+    if !DRAG_MOVED.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+    let window = overlay(app)?;
+    let pos = window.outer_position().map_err(|e| e.to_string())?;
+    let monitor = window
+        .monitor_from_point(pos.x as f64 + 8.0, pos.y as f64 + 8.0)
+        .ok()
+        .flatten()
+        .or_else(|| monitor_fallback(&window))
+        .ok_or_else(|| "Kein Monitor gefunden.".to_string())?;
     let scale = monitor.scale_factor();
     let area = monitor.work_area();
-    let width_px = OVERLAY_WIDTH * scale;
-    let height_px = OVERLAY_MIN_HEIGHT * scale;
-    let x = area.position.x as f64 + (area.size.width as f64 - width_px) / 2.0;
-    let y = area.position.y as f64 + (area.size.height as f64 - height_px) / 2.0;
-    window
-        .set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32))
-        .map_err(|e| e.to_string())?;
+    let (win_w, win_h) = overlay_size_px(&window, scale);
+    let fx = axis_frac(
+        area.position.x as f64,
+        area.size.width as f64,
+        win_w,
+        pos.x as f64,
+    );
+    let fy = axis_frac(
+        area.position.y as f64,
+        area.size.height as f64,
+        win_h,
+        pos.y as f64,
+    );
+    let origin_x = area.position.x;
+    let origin_y = area.position.y;
+    let current = crate::settings::load(app)?;
+    if current.overlay_anchored
+        && (current.overlay_fx - fx).abs() < 0.002
+        && (current.overlay_fy - fy).abs() < 0.002
+        && current.overlay_last_x == Some(origin_x)
+        && current.overlay_last_y == Some(origin_y)
+    {
+        return Ok(());
+    }
+    crate::settings::patch(app, true, |settings| {
+        settings.overlay_anchored = true;
+        settings.overlay_fx = fx;
+        settings.overlay_fy = fy;
+        settings.overlay_last_x = Some(origin_x);
+        settings.overlay_last_y = Some(origin_y);
+    })?;
     Ok(())
+}
+
+fn set_overlay_pos(window: &WebviewWindow, x: f64, y: f64) -> Result<(), String> {
+    POSITIONING.store(true, Ordering::SeqCst);
+    let gen = POSITIONING_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let result = window
+        .set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32))
+        .map_err(|e| e.to_string());
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+        if POSITIONING_GEN.load(Ordering::SeqCst) == gen {
+            POSITIONING.store(false, Ordering::SeqCst);
+        }
+    });
+    result
+}
+
+fn place_on_monitor(
+    window: &WebviewWindow,
+    monitor: &Monitor,
+    fx: f64,
+    fy: f64,
+) -> Result<(), String> {
+    let scale = monitor.scale_factor();
+    let area = monitor.work_area();
+    let (win_w, win_h) = overlay_size_px(window, scale);
+    let x = axis_pos(
+        area.position.x as f64,
+        area.size.width as f64,
+        win_w,
+        fx,
+    );
+    let y = axis_pos(
+        area.position.y as f64,
+        area.size.height as f64,
+        win_h,
+        fy,
+    );
+    set_overlay_pos(window, x, y)
+}
+
+fn clamp_overlay_into_work_area(window: &WebviewWindow) -> Result<(), String> {
+    let pos = window.outer_position().map_err(|e| e.to_string())?;
+    let monitor = window
+        .monitor_from_point(pos.x as f64, pos.y as f64)
+        .ok()
+        .flatten()
+        .or_else(|| monitor_fallback(window))
+        .ok_or_else(|| "Kein Monitor gefunden.".to_string())?;
+    let scale = monitor.scale_factor();
+    let area = monitor.work_area();
+    let (win_w, win_h) = overlay_size_px(window, scale);
+    let min_x = area.position.x as f64;
+    let min_y = area.position.y as f64;
+    let max_x = (min_x + area.size.width as f64 - win_w).max(min_x);
+    let max_y = (min_y + area.size.height as f64 - win_h).max(min_y);
+    let x = (pos.x as f64).clamp(min_x, max_x);
+    let y = (pos.y as f64).clamp(min_y, max_y);
+    if (x - pos.x as f64).abs() < 0.5 && (y - pos.y as f64).abs() < 0.5 {
+        return Ok(());
+    }
+    set_overlay_pos(window, x, y)
+}
+
+fn finish_overlay_drag(app: &AppHandle) {
+    if POSITIONING.load(Ordering::SeqCst) || !overlay_visible(app) {
+        OVERLAY_DRAGGING.store(false, Ordering::SeqCst);
+        DRAG_MOVED.store(false, Ordering::SeqCst);
+        return;
+    }
+    let _ = persist_overlay_anchor_from_window(app);
+    DRAG_MOVED.store(false, Ordering::SeqCst);
+    OVERLAY_DRAGGING.store(false, Ordering::SeqCst);
+    if let Ok(window) = overlay(app) {
+        let _ = window.set_focus();
+    }
+}
+
+fn schedule_drag_finish(app: &AppHandle, delay_ms: u64) {
+    let gen = DRAG_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+        if DRAG_GEN.load(Ordering::SeqCst) != gen {
+            return;
+        }
+        finish_overlay_drag(&app);
+    });
+}
+
+fn on_overlay_moved(app: &AppHandle) {
+    if POSITIONING.load(Ordering::SeqCst) || !overlay_visible(app) {
+        return;
+    }
+    OVERLAY_DRAGGING.store(true, Ordering::SeqCst);
+    DRAG_MOVED.store(true, Ordering::SeqCst);
+    schedule_drag_finish(app, 180);
+}
+
+pub fn position_overlay(app: &AppHandle) -> Result<(), String> {
+    let window = overlay(app)?;
+    let settings = crate::settings::load(app).unwrap_or_default();
+    let monitor = if settings.overlay_anchored {
+        match (settings.overlay_last_x, settings.overlay_last_y) {
+            (Some(x), Some(y)) => monitor_from_origin(&window, (x, y)),
+            _ => None,
+        }
+        .or_else(|| cursor_monitor(&window))
+    } else {
+        cursor_monitor(&window)
+    }
+    .ok_or_else(|| "Kein Monitor gefunden.".to_string())?;
+    let (fx, fy) = if settings.overlay_anchored {
+        (settings.overlay_fx, settings.overlay_fy)
+    } else {
+        (0.5, 0.5)
+    };
+    place_on_monitor(&window, &monitor, fx, fy)
 }
 
 /// Alt+Space is still down when the global shortcut fires on Pressed.
@@ -305,15 +516,21 @@ pub fn setup_blur_hide(app: &AppHandle) {
         return;
     };
     let handle = app.clone();
-    window.on_window_event(move |event| {
-        if let WindowEvent::Focused(false) = event {
-            if OPENING_SETTINGS.load(Ordering::SeqCst) {
+    window.on_window_event(move |event| match event {
+        WindowEvent::Moved(_) => {
+            on_overlay_moved(&handle);
+        }
+        WindowEvent::Focused(false) => {
+            if OPENING_SETTINGS.load(Ordering::SeqCst) || OVERLAY_DRAGGING.load(Ordering::SeqCst)
+            {
                 return;
             }
             let handle = handle.clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_millis(160)).await;
-                if OPENING_SETTINGS.load(Ordering::SeqCst) {
+                if OPENING_SETTINGS.load(Ordering::SeqCst)
+                    || OVERLAY_DRAGGING.load(Ordering::SeqCst)
+                {
                     return;
                 }
                 if let Ok(window) = overlay(&handle) {
@@ -323,6 +540,7 @@ pub fn setup_blur_hide(app: &AppHandle) {
                 }
             });
         }
+        _ => {}
     });
 }
 
@@ -563,7 +781,21 @@ pub fn set_overlay_height(app: AppHandle, height: f64) -> Result<(), String> {
     let clamped = height.max(OVERLAY_MIN_HEIGHT).min(640.0);
     window
         .set_size(LogicalSize::new(OVERLAY_WIDTH, clamped))
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    clamp_overlay_into_work_area(&window)
+}
+
+#[tauri::command]
+pub fn begin_overlay_drag(app: AppHandle) {
+    DRAG_MOVED.store(false, Ordering::SeqCst);
+    OVERLAY_DRAGGING.store(true, Ordering::SeqCst);
+    schedule_drag_finish(&app, 2500);
+}
+
+#[tauri::command]
+pub fn end_overlay_drag(app: AppHandle) {
+    DRAG_GEN.fetch_add(1, Ordering::SeqCst);
+    finish_overlay_drag(&app);
 }
 
 #[tauri::command]
@@ -635,5 +867,40 @@ pub fn update_window_titles(app: &AppHandle, language_setting: &str) {
     }
     if let Some(tray_win) = app.get_webview_window(TRAY_MENU_LABEL) {
         let _ = tray_win.set_title(crate::i18n::t(locale, "window_tray_menu"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{axis_frac, axis_pos};
+
+    #[test]
+    fn axis_roundtrip_center() {
+        let pos = axis_pos(100.0, 1000.0, 200.0, 0.5);
+        assert!((pos - 500.0).abs() < 1e-9);
+        assert!((axis_frac(100.0, 1000.0, 200.0, pos) - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn axis_upper_third() {
+        let pos = axis_pos(0.0, 1000.0, 100.0, 0.28);
+        assert!((pos - 252.0).abs() < 1e-9);
+        assert!((axis_frac(0.0, 1000.0, 100.0, pos) - 0.28).abs() < 1e-9);
+    }
+
+    #[test]
+    fn axis_clamps_and_no_travel() {
+        assert_eq!(axis_pos(10.0, 100.0, 200.0, 0.8), 10.0);
+        assert_eq!(axis_frac(10.0, 100.0, 200.0, 40.0), 0.5);
+        assert_eq!(axis_pos(0.0, 100.0, 20.0, 2.0), 80.0);
+        assert_eq!(axis_frac(0.0, 100.0, 20.0, -50.0), 0.0);
+    }
+
+    #[test]
+    fn negative_origin_left_monitor() {
+        let pos = axis_pos(-1920.0, 1920.0, 728.0, 0.5);
+        let frac = axis_frac(-1920.0, 1920.0, 728.0, pos);
+        assert!((frac - 0.5).abs() < 1e-9);
+        assert!(pos < 0.0);
     }
 }

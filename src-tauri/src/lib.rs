@@ -17,6 +17,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             overlay::hide_overlay_cmd,
             overlay::set_overlay_height,
+            overlay::begin_overlay_drag,
+            overlay::end_overlay_drag,
             overlay::open_settings,
             overlay::copy_text,
             overlay::hide_tray_menu,
