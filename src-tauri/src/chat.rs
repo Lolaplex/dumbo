@@ -450,7 +450,7 @@ async fn run_chat(
         return Err(crate::i18n::t(locale, "chat_base_url_missing").into());
     }
     let key = providers::read_key(&provider.id)?;
-    if key.trim().is_empty() && provider.kind != "ollama" && provider.kind != "lmstudio" {
+    if key.trim().is_empty() && provider.kind != "ollama" && provider.kind != "lmstudio" && provider.kind != "relay" {
         let msg = match locale {
             crate::i18n::Locale::De => format!("Kein API-Key für '{}'. In Settings eintragen und speichern.", provider.name),
             crate::i18n::Locale::En => format!("No API key for '{}'. Please enter it in Settings and save.", provider.name),
@@ -500,6 +500,17 @@ async fn run_chat(
             &prior,
             &user,
             &request.attachments,
+            &request.request_id,
+            &abort,
+        )
+        .await?
+    } else if provider.kind == "relay" {
+        stream_relay(
+            &app,
+            &provider,
+            &key,
+            &user,
+            request.chat_id.as_deref(),
             &request.request_id,
             &abort,
         )
@@ -816,6 +827,91 @@ fn emit_parsed_events(
     Ok(())
 }
 
+pub(crate) fn relay_turn_url(base_url: &str) -> String {
+    let base = base_url.trim().trim_end_matches('/');
+    if base.ends_with("/v1/turn") {
+        base.to_string()
+    } else if base.ends_with("/v1") {
+        format!("{base}/turn")
+    } else {
+        format!("{base}/v1/turn")
+    }
+}
+
+async fn stream_relay(
+    app: &AppHandle,
+    provider: &Provider,
+    key: &str,
+    user: &str,
+    session: Option<&str>,
+    request_id: &str,
+    abort: &AtomicBool,
+) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("HTTP Client Fehler: {e}"))?;
+
+    let url = relay_turn_url(&provider.base_url);
+
+    let mut body_map = serde_json::json!({
+        "channel": "dumbo",
+        "user": "dumbo",
+        "message": user,
+    });
+    if let Some(s) = session.filter(|s| !s.trim().is_empty()) {
+        body_map["session"] = serde_json::json!(s);
+    }
+
+    let mut req = client.post(&url).header("Content-Type", "application/json");
+
+    if !key.trim().is_empty() {
+        let clean_key = key.trim();
+        req = req
+            .header("X-Relay-Secret", clean_key)
+            .header("Authorization", format!("Bearer {clean_key}"));
+    }
+
+    let resp = req
+        .json(&body_map)
+        .send()
+        .await
+        .map_err(|e| format!("Relay Verbindung fehlgeschlagen ({url}): {e}"))?;
+
+    if abort.load(Ordering::Relaxed) {
+        return Ok(String::new());
+    }
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let err_text = resp.text().await.unwrap_or_default();
+        return Err(format!("Relay Fehler {status}: {err_text}"));
+    }
+
+    let val: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Relay Antwort ungültig: {e}"))?;
+
+    let reply = val
+        .get("reply")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    if !reply.is_empty() {
+        let _ = app.emit(
+            "chat-chunk",
+            ChatChunk {
+                request_id: request_id.to_string(),
+                text: reply.clone(),
+            },
+        );
+    }
+
+    Ok(reply)
+}
+
 fn persist_if_enabled(
     app: &AppHandle,
     provider_id: &str,
@@ -844,7 +940,7 @@ fn persist_if_enabled(
 mod tests {
     use super::{
         anthropic_chunk_text, assemble_user, gemini_chunk_text, gemini_stream_url,
-        openai_chunk_text, sanitize_prior, take_sse_events, PriorMessage,
+        openai_chunk_text, relay_turn_url, sanitize_prior, take_sse_events, PriorMessage,
     };
 
     #[test]
@@ -927,5 +1023,33 @@ mod tests {
             content: "  ".into(),
         }]);
         assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn relay_url_normalizes_paths() {
+        assert_eq!(
+            relay_turn_url("http://127.0.0.1:8787"),
+            "http://127.0.0.1:8787/v1/turn"
+        );
+        assert_eq!(
+            relay_turn_url("http://127.0.0.1:8787/"),
+            "http://127.0.0.1:8787/v1/turn"
+        );
+        assert_eq!(
+            relay_turn_url("http://127.0.0.1:8787/v1"),
+            "http://127.0.0.1:8787/v1/turn"
+        );
+        assert_eq!(
+            relay_turn_url("http://127.0.0.1:8787/v1/"),
+            "http://127.0.0.1:8787/v1/turn"
+        );
+        assert_eq!(
+            relay_turn_url("http://127.0.0.1:8787/v1/turn"),
+            "http://127.0.0.1:8787/v1/turn"
+        );
+        assert_eq!(
+            relay_turn_url("https://agents.lolax.dev"),
+            "https://agents.lolax.dev/v1/turn"
+        );
     }
 }

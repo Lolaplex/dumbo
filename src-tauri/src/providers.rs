@@ -182,6 +182,13 @@ fn defaults() -> Vec<Provider> {
             base_url: "http://127.0.0.1:1234/v1".into(),
             model: String::new(),
         },
+        Provider {
+            id: "relay".into(),
+            name: "Agents Relay".into(),
+            kind: "relay".into(),
+            base_url: "http://127.0.0.1:8787".into(),
+            model: String::new(),
+        },
     ]
 }
 
@@ -298,7 +305,7 @@ struct ModelEntry {
 #[tauri::command]
 pub async fn list_models(app: AppHandle, provider_id: String) -> Result<Vec<String>, String> {
     let provider = get_provider(&app, &provider_id)?;
-    if provider.base_url.trim().is_empty() {
+    if provider.kind == "relay" || provider.base_url.trim().is_empty() {
         return Ok(fallback_models(&provider));
     }
     let key = read_key(&provider.id)?;

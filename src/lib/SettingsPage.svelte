@@ -272,7 +272,7 @@
     }
   }
 
-  async function addPreset(preset: "openrouter" | "gemini" | "openai" | "ollama" | "claude") {
+  async function addPreset(preset: "openrouter" | "gemini" | "openai" | "ollama" | "claude" | "relay") {
     let spec = {
       id: "",
       name: "OpenRouter",
@@ -312,6 +312,14 @@
         kind: "ollama",
         baseUrl: "http://localhost:11434/v1",
         model: "llama3.2",
+      };
+    } else if (preset === "relay") {
+      spec = {
+        id: "",
+        name: "Agents Relay",
+        kind: "relay",
+        baseUrl: "http://127.0.0.1:8787",
+        model: "",
       };
     }
 
@@ -466,6 +474,7 @@
               <button type="button" class="ghost small" onclick={() => addPreset("openai")}>+ OpenAI</button>
               <button type="button" class="ghost small" onclick={() => addPreset("openrouter")}>+ OpenRouter</button>
               <button type="button" class="ghost small" onclick={() => addPreset("ollama")}>+ Ollama</button>
+              <button type="button" class="ghost small" onclick={() => addPreset("relay")}>+ Relay</button>
               <button type="button" class="ghost small" onclick={addCustom}>+ Custom</button>
             </div>
           </div>
@@ -479,11 +488,19 @@
                 </label>
                 <label>
                   {t("providerModel")}
-                  <input bind:value={selectedChatProvider.model} placeholder={t("providerModelPlaceholder")} onchange={() => saveProvider(selectedChatProvider)} />
+                  <input
+                    bind:value={selectedChatProvider.model}
+                    placeholder={selectedChatProvider.kind === "relay" ? t("providerModelOptionalPlaceholder") : t("providerModelPlaceholder")}
+                    onchange={() => saveProvider(selectedChatProvider)}
+                  />
                 </label>
                 <label class="wide">
                   {t("providerBaseUrl")}
-                  <input bind:value={selectedChatProvider.baseUrl} placeholder="https://api.openai.com/v1" onchange={() => saveProvider(selectedChatProvider)} />
+                  <input
+                    bind:value={selectedChatProvider.baseUrl}
+                    placeholder={selectedChatProvider.kind === "relay" ? "http://127.0.0.1:8787" : "https://api.openai.com/v1"}
+                    onchange={() => saveProvider(selectedChatProvider)}
+                  />
                 </label>
                 <label class="wide">
                   {t("providerApiKey")}
@@ -493,7 +510,7 @@
                     oninput={(e) => {
                       keyDrafts[selectedChatProvider.id] = e.currentTarget.value;
                     }}
-                    placeholder={selectedChatProvider.hasKey ? t("keySaved") : t("keyEmpty")}
+                    placeholder={selectedChatProvider.hasKey ? t("keySaved") : (selectedChatProvider.kind === "relay" ? t("keyOptional") : t("keyEmpty"))}
                     onkeydown={(e) => {
                       if (e.key === "Enter") void saveProvider(selectedChatProvider);
                     }}

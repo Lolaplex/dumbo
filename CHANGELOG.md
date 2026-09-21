@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI runs only on pull requests to `main`.
 
 ### Added
+- Generic `relay` provider supporting HTTP `/v1/turn` agent relays (e.g. `agents-relay`, Klanker, VPS).
+- Preset button `+ Relay` in Settings with custom base URL, optional model, and optional auth secret.
 - Overlay can be dragged via a hover-only handle; the parked spot is stored as work-area fractions and restored on that monitor.
 
 ## [0.44.1] - 2026-09-13

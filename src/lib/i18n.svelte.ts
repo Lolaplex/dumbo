@@ -60,9 +60,11 @@ export const translations = {
     providerApiKey: "API Key",
     keySaved: "Key saved (type to overwrite...)",
     keyEmpty: "Enter API key...",
+    keyOptional: "Optional (relay secret or token)...",
     saveProvider: "Save Settings",
     removeProvider: "Remove Provider",
     openaiKeyHint: "enter sk-...",
+    providerModelOptionalPlaceholder: "optional (e.g. runner.loop)",
 
     languageLabel: "Language",
     languageAuto: "System (Auto)",
@@ -182,9 +184,11 @@ export const translations = {
     providerApiKey: "API Key",
     keySaved: "Key gespeichert (überschreiben...)",
     keyEmpty: "API Key eingeben...",
+    keyOptional: "Optional (Relay Secret oder Token)...",
     saveProvider: "Einstellungen speichern",
     removeProvider: "Provider entfernen",
     openaiKeyHint: "sk-... eingeben",
+    providerModelOptionalPlaceholder: "optional (z. B. runner.loop)",
 
     languageLabel: "Sprache",
     languageAuto: "System (Auto)",
