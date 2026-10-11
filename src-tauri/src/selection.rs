@@ -32,6 +32,64 @@ fn write_clipboard(app: &AppHandle, value: &str) {
 }
 
 #[cfg(windows)]
+fn is_input_or_placeholder(text: &str, is_edit: bool) -> bool {
+    let lower = text.trim().to_lowercase();
+    if lower.is_empty() {
+        return true;
+    }
+    let placeholders = [
+        "message input",
+        "chat input",
+        "prompt",
+        "type a message",
+        "ask anything",
+        "ask a question",
+        "ask follow-up",
+        "send a message",
+        "nachricht eingeben",
+        "frage stellen",
+        "nachricht an",
+        "search",
+        "suche",
+    ];
+    if placeholders.iter().any(|&p| lower == p || lower.starts_with(p)) {
+        return true;
+    }
+    if is_edit
+        && lower.len() < 50
+        && (lower.contains("input")
+            || lower.contains("message")
+            || lower.contains("placeholder")
+            || lower.contains("ask"))
+    {
+        return true;
+    }
+    false
+}
+
+#[cfg(windows)]
+fn extract_text_from_element(element: &uiautomation::core::UIElement, is_edit: bool) -> Option<String> {
+    use uiautomation::patterns::UITextPattern;
+    if let Ok(text_pattern) = element.get_pattern::<UITextPattern>() {
+        if let Ok(range) = text_pattern.get_document_range() {
+            if let Ok(text) = range.get_text(-1) {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() && !is_input_or_placeholder(trimmed, is_edit) {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+    }
+    if let Ok(name) = element.get_name() {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() && !is_input_or_placeholder(trimmed, is_edit) {
+            return Some(trimmed.to_string());
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
 fn try_get_selection_uia() -> Option<String> {
     use uiautomation::patterns::UITextPattern;
     use uiautomation::UIAutomation;
@@ -47,10 +105,19 @@ fn try_get_selection_uia() -> Option<String> {
                     result.push_str(&text);
                 }
             }
-            return normalize(result);
+            if let Some(norm) = normalize(result) {
+                if !is_input_or_placeholder(&norm, false) {
+                    return Some(norm);
+                }
+            }
         }
     }
     None
+}
+
+#[cfg(not(windows))]
+fn is_input_or_placeholder(_text: &str, _is_edit: bool) -> bool {
+    false
 }
 
 #[cfg(not(windows))]
@@ -60,19 +127,84 @@ fn try_get_selection_uia() -> Option<String> {
 
 #[cfg(windows)]
 pub fn try_get_document_text_uia() -> Option<String> {
-    use uiautomation::patterns::UITextPattern;
+    use uiautomation::controls::ControlType;
     use uiautomation::UIAutomation;
 
     let automation = UIAutomation::new().ok()?;
     let element = automation.get_focused_element().ok()?;
+    let ctrl_type = element.get_control_type().ok();
+    let is_edit = ctrl_type == Some(ControlType::Edit);
 
-    if let Ok(text_pattern) = element.get_pattern::<UITextPattern>() {
-        if let Ok(range) = text_pattern.get_document_range() {
-            if let Ok(text) = range.get_text(-1) {
-                return normalize(text);
-            }
+    // If it's not an edit control, try getting document text directly
+    if !is_edit {
+        if let Some(text) = extract_text_from_element(&element, false) {
+            return Some(text);
         }
     }
+
+    // If it's an edit control (or direct extraction yielded placeholder),
+    // walk up the tree and look for preceding siblings (chat message containers)
+    let walker = automation
+        .get_control_view_walker()
+        .or_else(|_| automation.get_raw_view_walker())
+        .ok()?;
+
+    let mut curr = element;
+    for _ in 0..8 {
+        // Check previous siblings of current container
+        let mut prev_sibling = walker.get_previous_sibling(&curr);
+        let mut sibling_count = 0;
+        while let Ok(ref prev) = prev_sibling {
+            if sibling_count > 6 {
+                break;
+            }
+            if let Some(text) = extract_text_from_element(prev, false) {
+                let blocks: Vec<&str> = text
+                    .split("\n\n")
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty() && !is_input_or_placeholder(s, false))
+                    .collect();
+                if let Some(last_block) = blocks.last() {
+                    return Some(last_block.to_string());
+                }
+                return Some(text);
+            }
+
+            // Drill down into the last child of this previous sibling
+            let mut leaf = prev.clone();
+            for _ in 0..6 {
+                if let Ok(last_child) = walker.get_last_child(&leaf) {
+                    if let Some(child_text) = extract_text_from_element(&last_child, false) {
+                        return Some(child_text);
+                    }
+                    leaf = last_child;
+                } else {
+                    break;
+                }
+            }
+
+            prev_sibling = walker.get_previous_sibling(prev);
+            sibling_count += 1;
+        }
+
+        // Try getting document text from parent if it has text pattern
+        if let Ok(parent) = walker.get_parent(&curr) {
+            if let Some(parent_text) = extract_text_from_element(&parent, false) {
+                let blocks: Vec<&str> = parent_text
+                    .split("\n\n")
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty() && !is_input_or_placeholder(s, false))
+                    .collect();
+                if let Some(last_block) = blocks.last() {
+                    return Some(last_block.to_string());
+                }
+            }
+            curr = parent;
+        } else {
+            break;
+        }
+    }
+
     None
 }
 
@@ -84,21 +216,28 @@ pub fn try_get_document_text_uia() -> Option<String> {
 pub fn capture_latest_context(app: &AppHandle) -> Option<String> {
     // 1. Try selection first
     if let Some(sel) = try_get_selection_uia() {
-        return Some(sel);
+        if !is_input_or_placeholder(&sel, false) {
+            return Some(sel);
+        }
     }
-    // 2. Try whole document text and extract the last paragraph
+    // 2. Try whole document text and extract the last non-placeholder paragraph
     if let Some(doc) = try_get_document_text_uia() {
         let blocks: Vec<&str> = doc
             .split("\n\n")
             .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
+            .filter(|s| !s.is_empty() && !is_input_or_placeholder(s, false))
             .collect();
         if let Some(last_block) = blocks.last() {
             return Some(last_block.to_string());
         }
     }
     // 3. Fallback to clipboard
-    read_clipboard(app)
+    if let Some(clip) = read_clipboard(app) {
+        if !is_input_or_placeholder(&clip, false) {
+            return Some(clip);
+        }
+    }
+    None
 }
 
 #[cfg(windows)]
