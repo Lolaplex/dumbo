@@ -979,6 +979,142 @@ pub async fn synthesize(
     }
 }
 
+pub async fn speak_text_internal(app: &AppHandle, text: &str) {
+    let session = begin_tts_session();
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        let Ok(settings) = crate::settings::load(app) else {
+            return;
+        };
+        let locale = crate::i18n::resolve_locale(&settings.language);
+        let _ = app.emit("tts-error", crate::i18n::t(locale, "tts_no_text"));
+        return;
+    }
+
+    let Ok(mut settings) = crate::settings::load(app) else {
+        return;
+    };
+    settings.normalize();
+
+    let provider = settings.tts_provider.to_lowercase();
+
+    let (voice, model, region_or_url) = match provider.as_str() {
+        "local" => (
+            settings.tts_local_voice.as_str(),
+            "chatterbox-nano",
+            settings.tts_local_url.as_str(),
+        ),
+        "custom" => (
+            settings.tts_custom_voice.as_str(),
+            settings.tts_custom_model.as_str(),
+            settings.tts_custom_url.as_str(),
+        ),
+        "openai" => (
+            settings.tts_openai_voice.as_str(),
+            settings.tts_openai_model.as_str(),
+            "",
+        ),
+        "elevenlabs" => (
+            settings.tts_eleven_voice.as_str(),
+            settings.tts_eleven_model.as_str(),
+            "",
+        ),
+        "azure" => (
+            settings.tts_azure_voice.as_str(),
+            "",
+            settings.tts_azure_region_setting.as_str(),
+        ),
+        _ => (
+            settings.tts_gemini_voice.as_str(),
+            settings.tts_gemini_model.as_str(),
+            "",
+        ),
+    };
+
+    let locale = crate::i18n::resolve_locale(&settings.language);
+
+    let voice_or_model = if !voice.trim().is_empty() {
+        voice
+    } else {
+        model
+    };
+
+    let _ = app.emit("tts-reading-start", &text);
+
+    if let Some(cached) = get_cached_audio(&text, &provider, model, voice, region_or_url) {
+        let _ = enqueue_audio_bytes(cached);
+        if settings.history_enabled {
+            let _ = crate::history::save_tts_turn(app, &provider, voice_or_model, &text);
+        }
+        return;
+    }
+
+    let key = read_tts_key(&provider).unwrap_or_default();
+    if key.trim().is_empty()
+        && (provider == "azure" || provider == "elevenlabs" || provider == "openai" || provider == "gemini")
+    {
+        let msg = match locale {
+            crate::i18n::Locale::De => format!("TTS API-Key für '{provider}' fehlt. Bitte in den Einstellungen eintragen."),
+            crate::i18n::Locale::En => format!("TTS API key for '{provider}' is missing. Please enter it in Settings."),
+        };
+        eprintln!("{msg}");
+        let _ = app.emit("tts-error", msg);
+        return;
+    }
+
+    if let Err(err) = synthesize_and_play_phrases(
+        session,
+        &provider,
+        &key,
+        model,
+        voice,
+        region_or_url,
+        &text,
+    )
+    .await
+    {
+        let prefix = match locale {
+            crate::i18n::Locale::De => "TTS-Fehler",
+            crate::i18n::Locale::En => "TTS error",
+        };
+        eprintln!("{prefix}: {err}");
+        let _ = app.emit("tts-error", format!("{prefix}: {err}"));
+    } else if settings.history_enabled {
+        let _ = crate::history::save_tts_turn(app, &provider, voice_or_model, &text);
+    }
+}
+
+pub fn speak_text(app: &AppHandle, text: &str) {
+    if is_playing() {
+        stop_tts();
+    }
+    let app = app.clone();
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        speak_text_internal(&app, &text).await;
+    });
+}
+
+pub fn trigger_read_latest(app: &AppHandle) {
+    if is_playing() {
+        stop_tts();
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let text = crate::selection::capture_latest_context(&app)
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if !text.is_empty() {
+            speak_text_internal(&app, &text).await;
+        }
+    });
+}
+
 pub fn trigger_tts(app: &AppHandle) {
     if is_playing() {
         stop_tts();
@@ -987,8 +1123,6 @@ pub fn trigger_tts(app: &AppHandle) {
 
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let session = begin_tts_session();
-
         let ctx = crate::selection::capture_context(&app);
         let text = ctx
             .selection
@@ -996,101 +1130,7 @@ pub fn trigger_tts(app: &AppHandle) {
             .unwrap_or_default()
             .trim()
             .to_string();
-
-        let Ok(mut settings) = crate::settings::load(&app) else {
-            return;
-        };
-        settings.normalize();
-
-        let provider = settings.tts_provider.to_lowercase();
-
-        let (voice, model, region_or_url) = match provider.as_str() {
-            "local" => (
-                settings.tts_local_voice.as_str(),
-                "chatterbox-nano",
-                settings.tts_local_url.as_str(),
-            ),
-            "custom" => (
-                settings.tts_custom_voice.as_str(),
-                settings.tts_custom_model.as_str(),
-                settings.tts_custom_url.as_str(),
-            ),
-            "openai" => (
-                settings.tts_openai_voice.as_str(),
-                settings.tts_openai_model.as_str(),
-                "",
-            ),
-            "elevenlabs" => (
-                settings.tts_eleven_voice.as_str(),
-                settings.tts_eleven_model.as_str(),
-                "",
-            ),
-            "azure" => (
-                settings.tts_azure_voice.as_str(),
-                "",
-                settings.tts_azure_region_setting.as_str(),
-            ),
-            _ => (
-                settings.tts_gemini_voice.as_str(),
-                settings.tts_gemini_model.as_str(),
-                "",
-            ),
-        };
-
-        let locale = crate::i18n::resolve_locale(&settings.language);
-
-        if text.is_empty() {
-            let _ = app.emit("tts-error", crate::i18n::t(locale, "tts_no_text"));
-            return;
-        }
-
-        let voice_or_model = if !voice.trim().is_empty() {
-            voice
-        } else {
-            model
-        };
-
-        if let Some(cached) = get_cached_audio(&text, &provider, model, voice, region_or_url) {
-            let _ = enqueue_audio_bytes(cached);
-            if settings.history_enabled {
-                let _ = crate::history::save_tts_turn(&app, &provider, voice_or_model, &text);
-            }
-            return;
-        }
-
-        let key = read_tts_key(&provider).unwrap_or_default();
-        if key.trim().is_empty()
-            && (provider == "azure" || provider == "elevenlabs" || provider == "openai" || provider == "gemini")
-        {
-            let msg = match locale {
-                crate::i18n::Locale::De => format!("TTS API-Key für '{provider}' fehlt. Bitte in den Einstellungen eintragen."),
-                crate::i18n::Locale::En => format!("TTS API key for '{provider}' is missing. Please enter it in Settings."),
-            };
-            eprintln!("{msg}");
-            let _ = app.emit("tts-error", msg);
-            return;
-        }
-
-        if let Err(err) = synthesize_and_play_phrases(
-            session,
-            &provider,
-            &key,
-            model,
-            voice,
-            region_or_url,
-            &text,
-        )
-        .await
-        {
-            let prefix = match locale {
-                crate::i18n::Locale::De => "TTS-Fehler",
-                crate::i18n::Locale::En => "TTS error",
-            };
-            eprintln!("{prefix}: {err}");
-            let _ = app.emit("tts-error", format!("{prefix}: {err}"));
-        } else if settings.history_enabled {
-            let _ = crate::history::save_tts_turn(&app, &provider, voice_or_model, &text);
-        }
+        speak_text_internal(&app, &text).await;
     });
 }
 

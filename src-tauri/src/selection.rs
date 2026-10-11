@@ -59,7 +59,50 @@ fn try_get_selection_uia() -> Option<String> {
 }
 
 #[cfg(windows)]
-fn release_physical_modifiers() {
+pub fn try_get_document_text_uia() -> Option<String> {
+    use uiautomation::patterns::UITextPattern;
+    use uiautomation::UIAutomation;
+
+    let automation = UIAutomation::new().ok()?;
+    let element = automation.get_focused_element().ok()?;
+
+    if let Ok(text_pattern) = element.get_pattern::<UITextPattern>() {
+        if let Ok(range) = text_pattern.get_document_range() {
+            if let Ok(text) = range.get_text(-1) {
+                return normalize(text);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+pub fn try_get_document_text_uia() -> Option<String> {
+    None
+}
+
+pub fn capture_latest_context(app: &AppHandle) -> Option<String> {
+    // 1. Try selection first
+    if let Some(sel) = try_get_selection_uia() {
+        return Some(sel);
+    }
+    // 2. Try whole document text and extract the last paragraph
+    if let Some(doc) = try_get_document_text_uia() {
+        let blocks: Vec<&str> = doc
+            .split("\n\n")
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if let Some(last_block) = blocks.last() {
+            return Some(last_block.to_string());
+        }
+    }
+    // 3. Fallback to clipboard
+    read_clipboard(app)
+}
+
+#[cfg(windows)]
+pub fn release_physical_modifiers() {
     #[link(name = "user32")]
     extern "system" {
         fn keybd_event(bVk: u8, bScan: u8, dwFlags: u32, dwExtraInfo: usize);
@@ -85,7 +128,7 @@ fn release_physical_modifiers() {
 }
 
 #[cfg(not(windows))]
-fn release_physical_modifiers() {}
+pub fn release_physical_modifiers() {}
 
 fn simulate_copy() -> Result<(), String> {
     release_physical_modifiers();

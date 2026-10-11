@@ -14,11 +14,16 @@ const USER_FILES: &[&str] = &[
     "settings.json",
     "providers.json",
     "tts_keys.json",
+    "stt_keys.json",
     "provider_keys.json",
     "dumbo.db",
 ];
 pub const DEFAULT_HOTKEY: &str = "alt+space";
 pub const DEFAULT_TTS_HOTKEY: &str = "alt+shift+s";
+pub const DEFAULT_STT_HOTKEY: &str = "ctrl+shift+space";
+pub const DEFAULT_TTS_READ_LATEST_HOTKEY: &str = "ctrl+alt+r";
+pub const DEFAULT_STT_PROVIDER: &str = "groq";
+pub const DEFAULT_STT_MODEL: &str = "whisper-large-v3";
 
 pub const DEFAULT_GEMINI_TTS_VOICE: &str = "Puck";
 pub const DEFAULT_GEMINI_TTS_MODEL: &str = "gemini-2.0-flash";
@@ -241,6 +246,20 @@ pub struct AppSettings {
     pub tts_azure_voice: String,
     #[serde(default = "default_azure_tts_region")]
     pub tts_azure_region_setting: String,
+    #[serde(default = "default_stt_hotkey")]
+    pub stt_hotkey: String,
+    #[serde(default = "default_tts_read_latest_hotkey")]
+    pub tts_read_latest_hotkey: String,
+    #[serde(default = "default_stt_provider")]
+    pub stt_provider: String,
+    #[serde(default = "default_stt_model")]
+    pub stt_model: String,
+    #[serde(default = "default_true")]
+    pub stt_refiner: bool,
+    #[serde(default)]
+    pub stt_auto_enter: bool,
+    #[serde(default = "default_true")]
+    pub tts_veadio_hud: bool,
     #[serde(default = "default_language")]
     pub language: String,
     #[serde(default)]
@@ -253,6 +272,22 @@ pub struct AppSettings {
     pub overlay_last_x: Option<i32>,
     #[serde(default)]
     pub overlay_last_y: Option<i32>,
+}
+
+fn default_stt_hotkey() -> String {
+    DEFAULT_STT_HOTKEY.to_string()
+}
+fn default_tts_read_latest_hotkey() -> String {
+    DEFAULT_TTS_READ_LATEST_HOTKEY.to_string()
+}
+fn default_stt_provider() -> String {
+    DEFAULT_STT_PROVIDER.to_string()
+}
+fn default_stt_model() -> String {
+    DEFAULT_STT_MODEL.to_string()
+}
+fn default_true() -> bool {
+    true
 }
 
 fn default_hotkey() -> String {
@@ -359,6 +394,13 @@ impl Default for AppSettings {
             tts_eleven_model: DEFAULT_ELEVEN_TTS_MODEL.to_string(),
             tts_azure_voice: DEFAULT_AZURE_TTS_VOICE.to_string(),
             tts_azure_region_setting: DEFAULT_AZURE_TTS_REGION.to_string(),
+            stt_hotkey: DEFAULT_STT_HOTKEY.to_string(),
+            tts_read_latest_hotkey: DEFAULT_TTS_READ_LATEST_HOTKEY.to_string(),
+            stt_provider: DEFAULT_STT_PROVIDER.to_string(),
+            stt_model: DEFAULT_STT_MODEL.to_string(),
+            stt_refiner: true,
+            stt_auto_enter: false,
+            tts_veadio_hud: true,
             language: default_language(),
             overlay_anchored: false,
             overlay_fx: default_overlay_fx(),
@@ -376,6 +418,18 @@ impl AppSettings {
         }
         if self.tts_hotkey.trim().is_empty() {
             self.tts_hotkey = DEFAULT_TTS_HOTKEY.to_string();
+        }
+        if self.stt_hotkey.trim().is_empty() {
+            self.stt_hotkey = DEFAULT_STT_HOTKEY.to_string();
+        }
+        if self.tts_read_latest_hotkey.trim().is_empty() {
+            self.tts_read_latest_hotkey = DEFAULT_TTS_READ_LATEST_HOTKEY.to_string();
+        }
+        if self.stt_provider.trim().is_empty() {
+            self.stt_provider = DEFAULT_STT_PROVIDER.to_string();
+        }
+        if self.stt_model.trim().is_empty() {
+            self.stt_model = DEFAULT_STT_MODEL.to_string();
         }
         if self.tts_custom_url.trim().is_empty() {
             self.tts_custom_url = DEFAULT_CUSTOM_TTS_URL.to_string();
@@ -555,7 +609,7 @@ pub fn save_settings(app: AppHandle, settings: Value) -> Result<AppSettings, Str
     next.normalize();
     save_to_disk(&path, &next)?;
 
-    if let Err(err) = crate::overlay::register_hotkeys(&app, &next.hotkey, &next.tts_hotkey) {
+    if let Err(err) = crate::overlay::register_hotkeys(&app, &next) {
         eprintln!("Hotkeys Registrierung Warnung: {err}");
     }
     if let Err(err) = apply_autostart(&app, next.autostart) {

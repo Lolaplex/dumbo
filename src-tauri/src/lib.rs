@@ -4,7 +4,9 @@ pub mod i18n;
 mod overlay;
 mod providers;
 mod selection;
+mod server;
 mod settings;
+mod stt;
 mod tts;
 mod updater;
 
@@ -44,6 +46,10 @@ pub fn run() {
             tts::test_tts,
             tts::get_local_tts_status,
             tts::get_tts_state,
+            stt::set_stt_key,
+            stt::get_stt_key_status,
+            stt::toggle_stt_cmd,
+            stt::get_stt_state,
             updater::check_for_updates,
             updater::install_update,
         ]);
@@ -90,9 +96,10 @@ pub fn run() {
             providers::ensure_defaults(app.handle())?;
             history::init_db(app.handle())?;
             tts::init(app.handle());
+            server::start_agent_bridge(app.handle().clone());
             let loaded = settings::load(app.handle())?;
             let _ = settings::apply_autostart(app.handle(), loaded.autostart);
-            if let Err(err) = overlay::register_hotkeys(app.handle(), &loaded.hotkey, &loaded.tts_hotkey) {
+            if let Err(err) = overlay::register_hotkeys(app.handle(), &loaded) {
                 eprintln!("Hotkeys nicht aktiv: {err}");
             }
             Ok(())

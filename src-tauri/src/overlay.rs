@@ -363,29 +363,54 @@ pub fn on_hotkey(app: &AppHandle) {
 }
 
 #[cfg(desktop)]
-static REGISTERED_SHORTCUTS: Mutex<(
-    Option<tauri_plugin_global_shortcut::Shortcut>,
-    Option<tauri_plugin_global_shortcut::Shortcut>,
-)> = Mutex::new((None, None));
+#[derive(Default, Clone)]
+struct RegisteredShortcuts {
+    overlay: Option<tauri_plugin_global_shortcut::Shortcut>,
+    tts: Option<tauri_plugin_global_shortcut::Shortcut>,
+    stt: Option<tauri_plugin_global_shortcut::Shortcut>,
+    tts_read_latest: Option<tauri_plugin_global_shortcut::Shortcut>,
+}
+
+#[cfg(desktop)]
+static REGISTERED_SHORTCUTS: Mutex<RegisteredShortcuts> = Mutex::new(RegisteredShortcuts {
+    overlay: None,
+    tts: None,
+    stt: None,
+    tts_read_latest: None,
+});
 
 #[cfg(desktop)]
 pub fn handle_global_shortcut(
     app: &AppHandle,
     shortcut: &tauri_plugin_global_shortcut::Shortcut,
 ) {
-    let (overlay_sc, tts_sc) = match REGISTERED_SHORTCUTS.lock() {
+    let scs = match REGISTERED_SHORTCUTS.lock() {
         Ok(guard) => (*guard).clone(),
-        Err(_) => (None, None),
+        Err(_) => RegisteredShortcuts::default(),
     };
 
-    if let Some(ref sc) = tts_sc {
+    if let Some(ref sc) = scs.stt {
+        if sc == shortcut || sc.id() == shortcut.id() {
+            crate::stt::toggle_stt(app);
+            return;
+        }
+    }
+
+    if let Some(ref sc) = scs.tts_read_latest {
+        if sc == shortcut || sc.id() == shortcut.id() {
+            crate::tts::trigger_read_latest(app);
+            return;
+        }
+    }
+
+    if let Some(ref sc) = scs.tts {
         if sc == shortcut || sc.id() == shortcut.id() {
             crate::tts::trigger_tts(app);
             return;
         }
     }
 
-    if let Some(ref sc) = overlay_sc {
+    if let Some(ref sc) = scs.overlay {
         if sc == shortcut || sc.id() == shortcut.id() {
             on_hotkey(app);
             return;
@@ -449,65 +474,89 @@ pub fn normalize_hotkey(input: &str) -> String {
 
 pub fn register_hotkeys(
     app: &AppHandle,
-    overlay_accel: &str,
-    tts_accel: &str,
+    settings: &crate::settings::AppSettings,
 ) -> Result<(), String> {
     #[cfg(desktop)]
     {
-        use crate::settings::{DEFAULT_HOTKEY, DEFAULT_TTS_HOTKEY};
+        use crate::settings::{
+            DEFAULT_HOTKEY, DEFAULT_STT_HOTKEY, DEFAULT_TTS_HOTKEY,
+            DEFAULT_TTS_READ_LATEST_HOTKEY,
+        };
         use std::str::FromStr;
         use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
         let _ = app.global_shortcut().unregister_all();
 
-        let o_norm = normalize_hotkey(overlay_accel);
+        let o_norm = normalize_hotkey(&settings.hotkey);
         let o_str = if o_norm.is_empty() {
             DEFAULT_HOTKEY
         } else {
             &o_norm
         };
 
-        let t_norm = normalize_hotkey(tts_accel);
+        let t_norm = normalize_hotkey(&settings.tts_hotkey);
         let t_str = if t_norm.is_empty() {
             DEFAULT_TTS_HOTKEY
         } else {
             &t_norm
         };
 
+        let s_norm = normalize_hotkey(&settings.stt_hotkey);
+        let s_str = if s_norm.is_empty() {
+            DEFAULT_STT_HOTKEY
+        } else {
+            &s_norm
+        };
+
+        let r_norm = normalize_hotkey(&settings.tts_read_latest_hotkey);
+        let r_str = if r_norm.is_empty() {
+            DEFAULT_TTS_READ_LATEST_HOTKEY
+        } else {
+            &r_norm
+        };
+
         let o_sc = Shortcut::from_str(o_str)
             .map_err(|e| format!("Overlay-Hotkey '{o_str}' ungültig: {e}"))?;
         let t_sc = Shortcut::from_str(t_str)
             .map_err(|e| format!("TTS-Hotkey '{t_str}' ungültig: {e}"))?;
+        let s_sc = Shortcut::from_str(s_str)
+            .map_err(|e| format!("STT-Hotkey '{s_str}' ungültig: {e}"))?;
+        let r_sc = Shortcut::from_str(r_str)
+            .map_err(|e| format!("Read-Latest-Hotkey '{r_str}' ungültig: {e}"))?;
 
-        app.global_shortcut()
-            .register(o_sc)
-            .map_err(|e| format!("Overlay-Hotkey '{o_str}' nicht registrierbar: {e}"))?;
+        let _ = app.global_shortcut().register(o_sc);
 
         let mut tts_registered = false;
         if o_sc != t_sc {
-            match app.global_shortcut().register(t_sc) {
-                Ok(_) => {
-                    tts_registered = true;
-                }
-                Err(err) => {
-                    eprintln!("TTS-Hotkey '{t_str}' nicht registrierbar: {err}");
-                    let locale = crate::i18n::app_locale(app);
-                    let msg = match locale {
-                        crate::i18n::Locale::De => format!("TTS-Hotkey '{t_str}' konnte vom System nicht registriert werden (evtl. belegt): {err}"),
-                        crate::i18n::Locale::En => format!("TTS shortcut '{t_str}' could not be registered by the system (possibly in use): {err}"),
-                    };
-                    let _ = app.emit("hotkey-error", msg);
-                }
+            if app.global_shortcut().register(t_sc).is_ok() {
+                tts_registered = true;
             }
-        } else {
-            tts_registered = true;
+        }
+
+        let mut stt_registered = false;
+        if s_sc != o_sc && s_sc != t_sc {
+            if app.global_shortcut().register(s_sc).is_ok() {
+                stt_registered = true;
+            }
+        }
+
+        let mut read_latest_registered = false;
+        if r_sc != o_sc && r_sc != t_sc && r_sc != s_sc {
+            if app.global_shortcut().register(r_sc).is_ok() {
+                read_latest_registered = true;
+            }
         }
 
         if let Ok(mut guard) = REGISTERED_SHORTCUTS.lock() {
-            *guard = (Some(o_sc), if tts_registered { Some(t_sc) } else { None });
+            *guard = RegisteredShortcuts {
+                overlay: Some(o_sc),
+                tts: if tts_registered { Some(t_sc) } else { None },
+                stt: if stt_registered { Some(s_sc) } else { None },
+                tts_read_latest: if read_latest_registered { Some(r_sc) } else { None },
+            };
         }
     }
-    let _ = (app, overlay_accel, tts_accel);
+    let _ = (app, settings);
     Ok(())
 }
 
