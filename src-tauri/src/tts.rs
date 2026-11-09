@@ -174,11 +174,14 @@ fn sync_tts_busy_event() {
     let busy = synthesizing || playing;
 
     if let Some(app) = TTS_APP.get() {
-        let _ = app.emit("tts-state", TtsLiveState {
-            synthesizing,
-            playing,
-            busy,
-        });
+        let _ = app.emit(
+            "tts-state",
+            TtsLiveState {
+                synthesizing,
+                playing,
+                busy,
+            },
+        );
         if LAST_TTS_BUSY.load(Ordering::SeqCst) != busy {
             LAST_TTS_BUSY.store(busy, Ordering::SeqCst);
             let _ = app.emit("tts-busy", busy);
@@ -490,7 +493,8 @@ async fn synthesize_gemini(
 
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-        model_name, key.trim()
+        model_name,
+        key.trim()
     );
 
     let prompt = format!(
@@ -539,9 +543,7 @@ async fn synthesize_gemini(
         .and_then(|c| c.into_iter().next())
         .and_then(|c| c.content)
         .and_then(|c| c.parts)
-        .and_then(|parts| {
-            parts.into_iter().find_map(|p| p.inline_data)
-        })
+        .and_then(|parts| parts.into_iter().find_map(|p| p.inline_data))
         .ok_or_else(|| "Gemini hat keine Audiodaten zurückgegeben.".to_string())?;
 
     let b64 = inline.data.ok_or_else(|| "Audiodaten leer.".to_string())?;
@@ -825,8 +827,6 @@ async fn synthesize_openai_compatible(
     Ok(bytes.to_vec())
 }
 
-
-
 async fn synthesize_custom(
     url: &str,
     voice: &str,
@@ -979,6 +979,142 @@ pub async fn synthesize(
     }
 }
 
+pub async fn speak_text_internal(app: &AppHandle, text: &str) {
+    let session = begin_tts_session();
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        let Ok(settings) = crate::settings::load(app) else {
+            return;
+        };
+        let locale = crate::i18n::resolve_locale(&settings.language);
+        let _ = app.emit("tts-error", crate::i18n::t(locale, "tts_no_text"));
+        return;
+    }
+
+    let Ok(mut settings) = crate::settings::load(app) else {
+        return;
+    };
+    settings.normalize();
+
+    let provider = settings.tts_provider.to_lowercase();
+
+    let (voice, model, region_or_url) = match provider.as_str() {
+        "local" => (
+            settings.tts_local_voice.as_str(),
+            "chatterbox-nano",
+            settings.tts_local_url.as_str(),
+        ),
+        "custom" => (
+            settings.tts_custom_voice.as_str(),
+            settings.tts_custom_model.as_str(),
+            settings.tts_custom_url.as_str(),
+        ),
+        "openai" => (
+            settings.tts_openai_voice.as_str(),
+            settings.tts_openai_model.as_str(),
+            "",
+        ),
+        "elevenlabs" => (
+            settings.tts_eleven_voice.as_str(),
+            settings.tts_eleven_model.as_str(),
+            "",
+        ),
+        "azure" => (
+            settings.tts_azure_voice.as_str(),
+            "",
+            settings.tts_azure_region_setting.as_str(),
+        ),
+        _ => (
+            settings.tts_gemini_voice.as_str(),
+            settings.tts_gemini_model.as_str(),
+            "",
+        ),
+    };
+
+    let locale = crate::i18n::resolve_locale(&settings.language);
+
+    let voice_or_model = if !voice.trim().is_empty() {
+        voice
+    } else {
+        model
+    };
+
+    let _ = app.emit("tts-reading-start", &text);
+
+    if let Some(cached) = get_cached_audio(&text, &provider, model, voice, region_or_url) {
+        let _ = enqueue_audio_bytes(cached);
+        if settings.history_enabled {
+            let _ = crate::history::save_tts_turn(app, &provider, voice_or_model, &text);
+        }
+        return;
+    }
+
+    let key = read_tts_key(&provider).unwrap_or_default();
+    if key.trim().is_empty()
+        && (provider == "azure"
+            || provider == "elevenlabs"
+            || provider == "openai"
+            || provider == "gemini")
+    {
+        let msg = match locale {
+            crate::i18n::Locale::De => {
+                format!("TTS API-Key für '{provider}' fehlt. Bitte in den Einstellungen eintragen.")
+            }
+            crate::i18n::Locale::En => {
+                format!("TTS API key for '{provider}' is missing. Please enter it in Settings.")
+            }
+        };
+        eprintln!("{msg}");
+        let _ = app.emit("tts-error", msg);
+        return;
+    }
+
+    if let Err(err) =
+        synthesize_and_play_phrases(session, &provider, &key, model, voice, region_or_url, &text)
+            .await
+    {
+        let prefix = match locale {
+            crate::i18n::Locale::De => "TTS-Fehler",
+            crate::i18n::Locale::En => "TTS error",
+        };
+        eprintln!("{prefix}: {err}");
+        let _ = app.emit("tts-error", format!("{prefix}: {err}"));
+    } else if settings.history_enabled {
+        let _ = crate::history::save_tts_turn(app, &provider, voice_or_model, &text);
+    }
+}
+
+pub fn speak_text(app: &AppHandle, text: &str) {
+    if is_playing() {
+        stop_tts();
+    }
+    let app = app.clone();
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        speak_text_internal(&app, &text).await;
+    });
+}
+
+pub fn trigger_read_latest(app: &AppHandle) {
+    if is_playing() {
+        stop_tts();
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let text = crate::selection::capture_latest_context(&app)
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if !text.is_empty() {
+            speak_text_internal(&app, &text).await;
+        }
+    });
+}
+
 pub fn trigger_tts(app: &AppHandle) {
     if is_playing() {
         stop_tts();
@@ -987,8 +1123,6 @@ pub fn trigger_tts(app: &AppHandle) {
 
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let session = begin_tts_session();
-
         let ctx = crate::selection::capture_context(&app);
         let text = ctx
             .selection
@@ -996,101 +1130,7 @@ pub fn trigger_tts(app: &AppHandle) {
             .unwrap_or_default()
             .trim()
             .to_string();
-
-        let Ok(mut settings) = crate::settings::load(&app) else {
-            return;
-        };
-        settings.normalize();
-
-        let provider = settings.tts_provider.to_lowercase();
-
-        let (voice, model, region_or_url) = match provider.as_str() {
-            "local" => (
-                settings.tts_local_voice.as_str(),
-                "chatterbox-nano",
-                settings.tts_local_url.as_str(),
-            ),
-            "custom" => (
-                settings.tts_custom_voice.as_str(),
-                settings.tts_custom_model.as_str(),
-                settings.tts_custom_url.as_str(),
-            ),
-            "openai" => (
-                settings.tts_openai_voice.as_str(),
-                settings.tts_openai_model.as_str(),
-                "",
-            ),
-            "elevenlabs" => (
-                settings.tts_eleven_voice.as_str(),
-                settings.tts_eleven_model.as_str(),
-                "",
-            ),
-            "azure" => (
-                settings.tts_azure_voice.as_str(),
-                "",
-                settings.tts_azure_region_setting.as_str(),
-            ),
-            _ => (
-                settings.tts_gemini_voice.as_str(),
-                settings.tts_gemini_model.as_str(),
-                "",
-            ),
-        };
-
-        let locale = crate::i18n::resolve_locale(&settings.language);
-
-        if text.is_empty() {
-            let _ = app.emit("tts-error", crate::i18n::t(locale, "tts_no_text"));
-            return;
-        }
-
-        let voice_or_model = if !voice.trim().is_empty() {
-            voice
-        } else {
-            model
-        };
-
-        if let Some(cached) = get_cached_audio(&text, &provider, model, voice, region_or_url) {
-            let _ = enqueue_audio_bytes(cached);
-            if settings.history_enabled {
-                let _ = crate::history::save_tts_turn(&app, &provider, voice_or_model, &text);
-            }
-            return;
-        }
-
-        let key = read_tts_key(&provider).unwrap_or_default();
-        if key.trim().is_empty()
-            && (provider == "azure" || provider == "elevenlabs" || provider == "openai" || provider == "gemini")
-        {
-            let msg = match locale {
-                crate::i18n::Locale::De => format!("TTS API-Key für '{provider}' fehlt. Bitte in den Einstellungen eintragen."),
-                crate::i18n::Locale::En => format!("TTS API key for '{provider}' is missing. Please enter it in Settings."),
-            };
-            eprintln!("{msg}");
-            let _ = app.emit("tts-error", msg);
-            return;
-        }
-
-        if let Err(err) = synthesize_and_play_phrases(
-            session,
-            &provider,
-            &key,
-            model,
-            voice,
-            region_or_url,
-            &text,
-        )
-        .await
-        {
-            let prefix = match locale {
-                crate::i18n::Locale::De => "TTS-Fehler",
-                crate::i18n::Locale::En => "TTS error",
-            };
-            eprintln!("{prefix}: {err}");
-            let _ = app.emit("tts-error", format!("{prefix}: {err}"));
-        } else if settings.history_enabled {
-            let _ = crate::history::save_tts_turn(&app, &provider, voice_or_model, &text);
-        }
+        speak_text_internal(&app, &text).await;
     });
 }
 
@@ -1131,7 +1171,10 @@ pub struct LocalTtsStatus {
 }
 
 #[tauri::command]
-pub async fn get_local_tts_status(app: AppHandle, url: Option<String>) -> Result<LocalTtsStatus, String> {
+pub async fn get_local_tts_status(
+    app: AppHandle,
+    url: Option<String>,
+) -> Result<LocalTtsStatus, String> {
     let locale = crate::i18n::app_locale(&app);
     let target_url = url.unwrap_or_else(|| DEFAULT_CUSTOM_TTS_URL.to_string());
     let clean_url = normalize_tts_base(&target_url);
@@ -1147,7 +1190,10 @@ pub async fn get_local_tts_status(app: AppHandle, url: Option<String>) -> Result
         Ok(res) if res.status().is_success() => {
             if let Ok(json) = res.json::<serde_json::Value>().await {
                 let ready = json.get("ready").and_then(|v| v.as_bool()).unwrap_or(false);
-                let loading = json.get("loading").and_then(|v| v.as_bool()).unwrap_or(false);
+                let loading = json
+                    .get("loading")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 let error = json.get("error").and_then(|v| v.as_str());
                 let device_backend = json
                     .get("deviceBackend")
@@ -1334,8 +1380,14 @@ mod tests {
 
     #[test]
     fn kokoro_base_with_and_without_v1() {
-        assert_eq!(openai_api_root("http://127.0.0.1:8880"), "http://127.0.0.1:8880/v1");
-        assert_eq!(openai_api_root("http://127.0.0.1:8880/v1"), "http://127.0.0.1:8880/v1");
+        assert_eq!(
+            openai_api_root("http://127.0.0.1:8880"),
+            "http://127.0.0.1:8880/v1"
+        );
+        assert_eq!(
+            openai_api_root("http://127.0.0.1:8880/v1"),
+            "http://127.0.0.1:8880/v1"
+        );
         assert_eq!(
             openai_speech_url("http://127.0.0.1:8880/v1"),
             "http://127.0.0.1:8880/v1/audio/speech"
@@ -1351,12 +1403,20 @@ mod tests {
         use super::derive_azure_locale;
         use crate::i18n::Locale;
 
-        assert_eq!(derive_azure_locale("de-DE-ConradNeural", Locale::En), "de-DE");
-        assert_eq!(derive_azure_locale("en-US-JennyNeural", Locale::De), "en-US");
+        assert_eq!(
+            derive_azure_locale("de-DE-ConradNeural", Locale::En),
+            "de-DE"
+        );
+        assert_eq!(
+            derive_azure_locale("en-US-JennyNeural", Locale::De),
+            "en-US"
+        );
         assert_eq!(derive_azure_locale("en-GB-RyanNeural", Locale::De), "en-GB");
-        assert_eq!(derive_azure_locale("fr-FR-HenriNeural", Locale::En), "fr-FR");
+        assert_eq!(
+            derive_azure_locale("fr-FR-HenriNeural", Locale::En),
+            "fr-FR"
+        );
         assert_eq!(derive_azure_locale("custom-voice", Locale::De), "de-DE");
         assert_eq!(derive_azure_locale("custom-voice", Locale::En), "en-US");
     }
 }
-

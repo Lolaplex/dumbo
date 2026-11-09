@@ -14,11 +14,16 @@ const USER_FILES: &[&str] = &[
     "settings.json",
     "providers.json",
     "tts_keys.json",
+    "stt_keys.json",
     "provider_keys.json",
     "dumbo.db",
 ];
 pub const DEFAULT_HOTKEY: &str = "alt+space";
 pub const DEFAULT_TTS_HOTKEY: &str = "alt+shift+s";
+pub const DEFAULT_STT_HOTKEY: &str = "ctrl+shift+space";
+pub const DEFAULT_TTS_READ_LATEST_HOTKEY: &str = "ctrl+alt+r";
+pub const DEFAULT_STT_PROVIDER: &str = "groq";
+pub const DEFAULT_STT_MODEL: &str = "whisper-large-v3";
 
 pub const DEFAULT_GEMINI_TTS_VOICE: &str = "Puck";
 pub const DEFAULT_GEMINI_TTS_MODEL: &str = "gemini-2.0-flash";
@@ -54,7 +59,11 @@ fn roaming_parent() -> Option<PathBuf> {
     std::env::var("APPDATA")
         .ok()
         .map(PathBuf::from)
-        .or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".config")))
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".config"))
+        })
 }
 
 pub fn legacy_data_dirs() -> Vec<PathBuf> {
@@ -185,8 +194,7 @@ fn settings_from_json(raw: &str) -> Result<AppSettings, String> {
     let user: Value = serde_json::from_str(raw).map_err(|e| e.to_string())?;
     let defaults = serde_json::to_value(AppSettings::default()).map_err(|e| e.to_string())?;
     let merged = overlay_value(defaults, user);
-    let mut settings: AppSettings =
-        serde_json::from_value(merged).map_err(|e| e.to_string())?;
+    let mut settings: AppSettings = serde_json::from_value(merged).map_err(|e| e.to_string())?;
     settings.normalize();
     Ok(settings)
 }
@@ -241,6 +249,20 @@ pub struct AppSettings {
     pub tts_azure_voice: String,
     #[serde(default = "default_azure_tts_region")]
     pub tts_azure_region_setting: String,
+    #[serde(default = "default_stt_hotkey")]
+    pub stt_hotkey: String,
+    #[serde(default = "default_tts_read_latest_hotkey")]
+    pub tts_read_latest_hotkey: String,
+    #[serde(default = "default_stt_provider")]
+    pub stt_provider: String,
+    #[serde(default = "default_stt_model")]
+    pub stt_model: String,
+    #[serde(default = "default_true")]
+    pub stt_refiner: bool,
+    #[serde(default)]
+    pub stt_auto_enter: bool,
+    #[serde(default = "default_true")]
+    pub tts_veadio_hud: bool,
     #[serde(default = "default_language")]
     pub language: String,
     #[serde(default)]
@@ -253,6 +275,22 @@ pub struct AppSettings {
     pub overlay_last_x: Option<i32>,
     #[serde(default)]
     pub overlay_last_y: Option<i32>,
+}
+
+fn default_stt_hotkey() -> String {
+    DEFAULT_STT_HOTKEY.to_string()
+}
+fn default_tts_read_latest_hotkey() -> String {
+    DEFAULT_TTS_READ_LATEST_HOTKEY.to_string()
+}
+fn default_stt_provider() -> String {
+    DEFAULT_STT_PROVIDER.to_string()
+}
+fn default_stt_model() -> String {
+    DEFAULT_STT_MODEL.to_string()
+}
+fn default_true() -> bool {
+    true
 }
 
 fn default_hotkey() -> String {
@@ -359,6 +397,13 @@ impl Default for AppSettings {
             tts_eleven_model: DEFAULT_ELEVEN_TTS_MODEL.to_string(),
             tts_azure_voice: DEFAULT_AZURE_TTS_VOICE.to_string(),
             tts_azure_region_setting: DEFAULT_AZURE_TTS_REGION.to_string(),
+            stt_hotkey: DEFAULT_STT_HOTKEY.to_string(),
+            tts_read_latest_hotkey: DEFAULT_TTS_READ_LATEST_HOTKEY.to_string(),
+            stt_provider: DEFAULT_STT_PROVIDER.to_string(),
+            stt_model: DEFAULT_STT_MODEL.to_string(),
+            stt_refiner: true,
+            stt_auto_enter: false,
+            tts_veadio_hud: true,
             language: default_language(),
             overlay_anchored: false,
             overlay_fx: default_overlay_fx(),
@@ -376,6 +421,18 @@ impl AppSettings {
         }
         if self.tts_hotkey.trim().is_empty() {
             self.tts_hotkey = DEFAULT_TTS_HOTKEY.to_string();
+        }
+        if self.stt_hotkey.trim().is_empty() {
+            self.stt_hotkey = DEFAULT_STT_HOTKEY.to_string();
+        }
+        if self.tts_read_latest_hotkey.trim().is_empty() {
+            self.tts_read_latest_hotkey = DEFAULT_TTS_READ_LATEST_HOTKEY.to_string();
+        }
+        if self.stt_provider.trim().is_empty() {
+            self.stt_provider = DEFAULT_STT_PROVIDER.to_string();
+        }
+        if self.stt_model.trim().is_empty() {
+            self.stt_model = DEFAULT_STT_MODEL.to_string();
         }
         if self.tts_custom_url.trim().is_empty() {
             self.tts_custom_url = DEFAULT_CUSTOM_TTS_URL.to_string();
@@ -449,7 +506,6 @@ impl AppSettings {
     }
 }
 
-
 pub fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
     prepare_config_dir(app)
 }
@@ -498,7 +554,9 @@ pub fn load(app: &AppHandle) -> Result<AppSettings, String> {
         use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
         use winreg::RegKey;
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        if let Ok(run_key) = hkcu.open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_READ) {
+        if let Ok(run_key) =
+            hkcu.open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_READ)
+        {
             settings.autostart = run_key.get_value::<String, _>("Dumbo").is_ok();
         }
     }
@@ -555,7 +613,7 @@ pub fn save_settings(app: AppHandle, settings: Value) -> Result<AppSettings, Str
     next.normalize();
     save_to_disk(&path, &next)?;
 
-    if let Err(err) = crate::overlay::register_hotkeys(&app, &next.hotkey, &next.tts_hotkey) {
+    if let Err(err) = crate::overlay::register_hotkeys(&app, &next) {
         eprintln!("Hotkeys Registrierung Warnung: {err}");
     }
     if let Err(err) = apply_autostart(&app, next.autostart) {
@@ -576,7 +634,10 @@ pub fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
 
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let run_key = hkcu
-        .open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_SET_VALUE)
+        .open_subkey_with_flags(
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            KEY_SET_VALUE,
+        )
         .map_err(|e| format!("Registry Run key nicht zugreifbar: {e}"))?;
 
     if enabled {

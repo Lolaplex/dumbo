@@ -7,11 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- CI runs only on pull requests to `main`.
+## [0.45.0] - 2026-11-09
 
 ### Added
+- Dictation: a global hotkey records the microphone, transcribes it with Groq Whisper and types the text into the focused app.
+- Speech-to-text settings: hotkey, Groq API key (Windows Credential Manager with a file fallback), optional LLM refiner and auto-Enter.
+- Recording and transcribing badge in the overlay while dictation runs.
+- Agent bridge HTTP server and the Veadio speech flow.
 - Overlay can be dragged via a hover-only handle; the parked spot is stored as work-area fractions and restored on that monitor.
+
+### Changed
+- CI runs only on pull requests to `main`.
+- Release workflow restored; releases publish `latest.json` again so the in-app updater works.
+
+### Fixed
+- After sleep or a dead WebView2, Dumbo reloads its windows and restarts itself if they stay blank, instead of leaving a window that can only be closed from Task Manager.
+- UI Automation selection ignores input placeholders and walks the tree to find the chat response.
 
 ## [0.44.1] - 2026-09-13
 

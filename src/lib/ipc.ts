@@ -50,6 +50,10 @@ export const ipc = {
   getTtsState: () => invoke<import("./types").TtsLiveState>("get_tts_state"),
   testTts: (payload: import("./types").TtsTestPayload) => invoke<void>("test_tts", { payload }),
   getLocalTtsStatus: (url?: string) => invoke<import("./types").LocalTtsStatus>("get_local_tts_status", { url: url ?? null }),
+  setSttKey: (id: string, key: string) => invoke<void>("set_stt_key", { id, key }),
+  getSttKeyStatus: (id: string) => invoke<boolean>("get_stt_key_status", { id }),
+  toggleStt: () => invoke<boolean>("toggle_stt_cmd"),
+  getSttState: () => invoke<import("./types").SttState>("get_stt_state"),
   checkForUpdates: () => invoke<import("./types").UpdateInfo>("check_for_updates"),
   installUpdate: () => invoke<void>("install_update"),
 };

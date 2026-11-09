@@ -37,6 +37,8 @@
   let ttsBusy = $state(false);
   let ttsError = $state("");
   let customStatus = $state<import("$lib/types").LocalTtsStatus | null>(null);
+  let sttKeyDraft = $state("");
+  let sttKeyStatus = $state(false);
 
   let updateStatus = $state<import("$lib/types").UpdateInfo | null>(null);
   let updateChecking = $state(false);
@@ -149,6 +151,22 @@
     showStatus(t("saved"));
   }
 
+  async function checkSttKey() {
+    try {
+      sttKeyStatus = await ipc.getSttKeyStatus("groq");
+    } catch {
+      sttKeyStatus = false;
+    }
+  }
+
+  async function saveSttKey(valueToSave?: string) {
+    const toSave = valueToSave !== undefined ? valueToSave.trim() : sttKeyDraft.trim();
+    await ipc.setSttKey("groq", toSave);
+    sttKeyDraft = "";
+    await checkSttKey();
+    showStatus(t("saved"));
+  }
+
   async function testTtsVoice() {
     if (!settings) return;
     const currentProvider = settings.ttsProvider.toLowerCase();
@@ -217,6 +235,7 @@
     settings = next;
     providers = await ipc.listProviders();
     await checkTtsKey();
+    await checkSttKey();
     await refreshCustomStatus();
     if (settings.historyEnabled) {
       chats = await ipc.listChats();
@@ -530,6 +549,18 @@
         <p class="note">{t("ttsHotkeyNote")}</p>
 
         <label style="margin-top: 1rem;">
+          {t("ttsReadLatestHotkey")}
+          <HotkeyInput bind:value={settings.ttsReadLatestHotkey} placeholder="Ctrl+Alt+R" onchange={() => persistSettings()} />
+        </label>
+        <p class="note">{t("ttsReadLatestHotkeyNote")}</p>
+
+        <label class="check" style="margin-top: 0.8rem;">
+          <span>{t("ttsVeadioHud")}</span>
+          <Switch bind:checked={settings.ttsVeadioHud} onchange={() => persistSettings()} />
+        </label>
+        <p class="note">{t("ttsVeadioHudNote")}</p>
+
+        <label style="margin-top: 1rem;">
           {t("ttsProvider")}
           <Select
             bind:value={settings.ttsProvider}
@@ -719,6 +750,56 @@
             <p class="status" style="color: var(--danger); margin-top: 8px;">{ttsError}</p>
           {/if}
         </article>
+      </section>
+
+      <!-- DIVIDER -->
+      <div class="section-divider"></div>
+
+      <!-- SECTION: SPEECH-TO-TEXT (STT) -->
+      <section>
+        <h2>{t("sttTitle")}</h2>
+        <label>
+          {t("sttHotkey")}
+          <HotkeyInput bind:value={settings.sttHotkey} placeholder={t("sttHotkeyPlaceholder")} onchange={() => persistSettings()} />
+        </label>
+        <p class="note">{t("sttHotkeyNote")}</p>
+
+        <article class="provider-card" style="margin-top: 0.9rem;">
+          <div class="grid">
+            <label class="wide">
+              {t("sttGroqKey")}
+              <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.3rem;">
+                <input
+                  type="password"
+                  bind:value={sttKeyDraft}
+                  placeholder={sttKeyStatus ? t("saved") : t("sttGroqKeyHint")}
+                  style="flex: 1;"
+                  onkeydown={(e) => {
+                    if (e.key === "Enter") void saveSttKey();
+                  }}
+                />
+                {#if sttKeyDraft.trim()}
+                  <button type="button" onclick={() => saveSttKey()}>{t("save")}</button>
+                {/if}
+                {#if sttKeyStatus}
+                  <button type="button" class="ghost" onclick={() => saveSttKey("")}>{t("delete")}</button>
+                {/if}
+              </div>
+            </label>
+          </div>
+        </article>
+
+        <label class="check" style="margin-top: 1rem;">
+          <span>{t("sttRefiner")}</span>
+          <Switch bind:checked={settings.sttRefiner} onchange={() => persistSettings()} />
+        </label>
+        <p class="note">{t("sttRefinerNote")}</p>
+
+        <label class="check" style="margin-top: 0.8rem;">
+          <span>{t("sttAutoEnter")}</span>
+          <Switch bind:checked={settings.sttAutoEnter} onchange={() => persistSettings()} />
+        </label>
+        <p class="note">{t("sttAutoEnterNote")}</p>
       </section>
 
       <!-- DIVIDER -->

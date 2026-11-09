@@ -117,6 +117,12 @@ pub fn t<'a>(locale: Locale, key: &'a str) -> &'a str {
         // Overlay & Hotkeys
         (Locale::De, "tray_menu_missing") => "Tray-Menü fehlt.",
         (Locale::En, "tray_menu_missing") => "Tray menu is missing.",
+        (Locale::De, "watchdog_give_up") => {
+            "Dumbo konnte die Oberfläche nicht wiederherstellen und wurde beendet. Bitte neu starten."
+        }
+        (Locale::En, "watchdog_give_up") => {
+            "Dumbo could not restore its window and has quit. Please start it again."
+        }
 
         // Providers
         (Locale::De, "provider_not_found") => "Provider nicht gefunden.",
@@ -149,8 +155,14 @@ mod tests {
     fn translates_known_keys() {
         assert_eq!(t(Locale::De, "window_settings"), "Einstellungen");
         assert_eq!(t(Locale::En, "window_settings"), "Settings");
-        assert_eq!(t(Locale::De, "tts_no_text"), "Kein Text markiert (und Zwischenablage ist leer).");
-        assert_eq!(t(Locale::En, "tts_no_text"), "No text selected (and clipboard is empty).");
+        assert_eq!(
+            t(Locale::De, "tts_no_text"),
+            "Kein Text markiert (und Zwischenablage ist leer)."
+        );
+        assert_eq!(
+            t(Locale::En, "tts_no_text"),
+            "No text selected (and clipboard is empty)."
+        );
     }
 
     #[test]

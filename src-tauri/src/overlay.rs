@@ -86,18 +86,14 @@ fn monitor_fallback(window: &WebviewWindow) -> Option<Monitor> {
 fn monitor_from_origin(window: &WebviewWindow, origin: (i32, i32)) -> Option<Monitor> {
     let x = origin.0 as f64 + 8.0;
     let y = origin.1 as f64 + 8.0;
-    window
-        .monitor_from_point(x, y)
-        .ok()
-        .flatten()
-        .or_else(|| {
-            window.available_monitors().ok().and_then(|monitors| {
-                monitors.into_iter().find(|monitor| {
-                    let area = monitor.work_area();
-                    area.position.x == origin.0 && area.position.y == origin.1
-                })
+    window.monitor_from_point(x, y).ok().flatten().or_else(|| {
+        window.available_monitors().ok().and_then(|monitors| {
+            monitors.into_iter().find(|monitor| {
+                let area = monitor.work_area();
+                area.position.x == origin.0 && area.position.y == origin.1
             })
         })
+    })
 }
 
 fn cursor_monitor(window: &WebviewWindow) -> Option<Monitor> {
@@ -180,18 +176,8 @@ fn place_on_monitor(
     let scale = monitor.scale_factor();
     let area = monitor.work_area();
     let (win_w, win_h) = overlay_size_px(window, scale);
-    let x = axis_pos(
-        area.position.x as f64,
-        area.size.width as f64,
-        win_w,
-        fx,
-    );
-    let y = axis_pos(
-        area.position.y as f64,
-        area.size.height as f64,
-        win_h,
-        fy,
-    );
+    let x = axis_pos(area.position.x as f64, area.size.width as f64, win_w, fx);
+    let y = axis_pos(area.position.y as f64, area.size.height as f64, win_h, fy);
     set_overlay_pos(window, x, y)
 }
 
@@ -331,6 +317,9 @@ pub fn harden_overlay_hwnd(app: &AppHandle) {
 }
 
 fn show_overlay_window(app: &AppHandle) -> Result<(), String> {
+    if !crate::watchdog::allow_show(app, OVERLAY_LABEL) {
+        return Ok(());
+    }
     let window = overlay(app)?;
     position_overlay(app)?;
     window.show().map_err(|e| e.to_string())?;
@@ -363,29 +352,51 @@ pub fn on_hotkey(app: &AppHandle) {
 }
 
 #[cfg(desktop)]
-static REGISTERED_SHORTCUTS: Mutex<(
-    Option<tauri_plugin_global_shortcut::Shortcut>,
-    Option<tauri_plugin_global_shortcut::Shortcut>,
-)> = Mutex::new((None, None));
+#[derive(Default, Clone)]
+struct RegisteredShortcuts {
+    overlay: Option<tauri_plugin_global_shortcut::Shortcut>,
+    tts: Option<tauri_plugin_global_shortcut::Shortcut>,
+    stt: Option<tauri_plugin_global_shortcut::Shortcut>,
+    tts_read_latest: Option<tauri_plugin_global_shortcut::Shortcut>,
+}
 
 #[cfg(desktop)]
-pub fn handle_global_shortcut(
-    app: &AppHandle,
-    shortcut: &tauri_plugin_global_shortcut::Shortcut,
-) {
-    let (overlay_sc, tts_sc) = match REGISTERED_SHORTCUTS.lock() {
+static REGISTERED_SHORTCUTS: Mutex<RegisteredShortcuts> = Mutex::new(RegisteredShortcuts {
+    overlay: None,
+    tts: None,
+    stt: None,
+    tts_read_latest: None,
+});
+
+#[cfg(desktop)]
+pub fn handle_global_shortcut(app: &AppHandle, shortcut: &tauri_plugin_global_shortcut::Shortcut) {
+    let scs = match REGISTERED_SHORTCUTS.lock() {
         Ok(guard) => (*guard).clone(),
-        Err(_) => (None, None),
+        Err(_) => RegisteredShortcuts::default(),
     };
 
-    if let Some(ref sc) = tts_sc {
+    if let Some(ref sc) = scs.stt {
+        if sc == shortcut || sc.id() == shortcut.id() {
+            crate::stt::toggle_stt(app);
+            return;
+        }
+    }
+
+    if let Some(ref sc) = scs.tts_read_latest {
+        if sc == shortcut || sc.id() == shortcut.id() {
+            crate::tts::trigger_read_latest(app);
+            return;
+        }
+    }
+
+    if let Some(ref sc) = scs.tts {
         if sc == shortcut || sc.id() == shortcut.id() {
             crate::tts::trigger_tts(app);
             return;
         }
     }
 
-    if let Some(ref sc) = overlay_sc {
+    if let Some(ref sc) = scs.overlay {
         if sc == shortcut || sc.id() == shortcut.id() {
             on_hotkey(app);
             return;
@@ -449,65 +460,92 @@ pub fn normalize_hotkey(input: &str) -> String {
 
 pub fn register_hotkeys(
     app: &AppHandle,
-    overlay_accel: &str,
-    tts_accel: &str,
+    settings: &crate::settings::AppSettings,
 ) -> Result<(), String> {
     #[cfg(desktop)]
     {
-        use crate::settings::{DEFAULT_HOTKEY, DEFAULT_TTS_HOTKEY};
+        use crate::settings::{
+            DEFAULT_HOTKEY, DEFAULT_STT_HOTKEY, DEFAULT_TTS_HOTKEY, DEFAULT_TTS_READ_LATEST_HOTKEY,
+        };
         use std::str::FromStr;
         use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
         let _ = app.global_shortcut().unregister_all();
 
-        let o_norm = normalize_hotkey(overlay_accel);
+        let o_norm = normalize_hotkey(&settings.hotkey);
         let o_str = if o_norm.is_empty() {
             DEFAULT_HOTKEY
         } else {
             &o_norm
         };
 
-        let t_norm = normalize_hotkey(tts_accel);
+        let t_norm = normalize_hotkey(&settings.tts_hotkey);
         let t_str = if t_norm.is_empty() {
             DEFAULT_TTS_HOTKEY
         } else {
             &t_norm
         };
 
+        let s_norm = normalize_hotkey(&settings.stt_hotkey);
+        let s_str = if s_norm.is_empty() {
+            DEFAULT_STT_HOTKEY
+        } else {
+            &s_norm
+        };
+
+        let r_norm = normalize_hotkey(&settings.tts_read_latest_hotkey);
+        let r_str = if r_norm.is_empty() {
+            DEFAULT_TTS_READ_LATEST_HOTKEY
+        } else {
+            &r_norm
+        };
+
         let o_sc = Shortcut::from_str(o_str)
             .map_err(|e| format!("Overlay-Hotkey '{o_str}' ungültig: {e}"))?;
-        let t_sc = Shortcut::from_str(t_str)
-            .map_err(|e| format!("TTS-Hotkey '{t_str}' ungültig: {e}"))?;
+        let t_sc =
+            Shortcut::from_str(t_str).map_err(|e| format!("TTS-Hotkey '{t_str}' ungültig: {e}"))?;
+        let s_sc =
+            Shortcut::from_str(s_str).map_err(|e| format!("STT-Hotkey '{s_str}' ungültig: {e}"))?;
+        let r_sc = Shortcut::from_str(r_str)
+            .map_err(|e| format!("Read-Latest-Hotkey '{r_str}' ungültig: {e}"))?;
 
-        app.global_shortcut()
-            .register(o_sc)
-            .map_err(|e| format!("Overlay-Hotkey '{o_str}' nicht registrierbar: {e}"))?;
+        let _ = app.global_shortcut().register(o_sc);
 
         let mut tts_registered = false;
         if o_sc != t_sc {
-            match app.global_shortcut().register(t_sc) {
-                Ok(_) => {
-                    tts_registered = true;
-                }
-                Err(err) => {
-                    eprintln!("TTS-Hotkey '{t_str}' nicht registrierbar: {err}");
-                    let locale = crate::i18n::app_locale(app);
-                    let msg = match locale {
-                        crate::i18n::Locale::De => format!("TTS-Hotkey '{t_str}' konnte vom System nicht registriert werden (evtl. belegt): {err}"),
-                        crate::i18n::Locale::En => format!("TTS shortcut '{t_str}' could not be registered by the system (possibly in use): {err}"),
-                    };
-                    let _ = app.emit("hotkey-error", msg);
-                }
+            if app.global_shortcut().register(t_sc).is_ok() {
+                tts_registered = true;
             }
-        } else {
-            tts_registered = true;
+        }
+
+        let mut stt_registered = false;
+        if s_sc != o_sc && s_sc != t_sc {
+            if app.global_shortcut().register(s_sc).is_ok() {
+                stt_registered = true;
+            }
+        }
+
+        let mut read_latest_registered = false;
+        if r_sc != o_sc && r_sc != t_sc && r_sc != s_sc {
+            if app.global_shortcut().register(r_sc).is_ok() {
+                read_latest_registered = true;
+            }
         }
 
         if let Ok(mut guard) = REGISTERED_SHORTCUTS.lock() {
-            *guard = (Some(o_sc), if tts_registered { Some(t_sc) } else { None });
+            *guard = RegisteredShortcuts {
+                overlay: Some(o_sc),
+                tts: if tts_registered { Some(t_sc) } else { None },
+                stt: if stt_registered { Some(s_sc) } else { None },
+                tts_read_latest: if read_latest_registered {
+                    Some(r_sc)
+                } else {
+                    None
+                },
+            };
         }
     }
-    let _ = (app, overlay_accel, tts_accel);
+    let _ = (app, settings);
     Ok(())
 }
 
@@ -521,8 +559,7 @@ pub fn setup_blur_hide(app: &AppHandle) {
             on_overlay_moved(&handle);
         }
         WindowEvent::Focused(false) => {
-            if OPENING_SETTINGS.load(Ordering::SeqCst) || OVERLAY_DRAGGING.load(Ordering::SeqCst)
-            {
+            if OPENING_SETTINGS.load(Ordering::SeqCst) || OVERLAY_DRAGGING.load(Ordering::SeqCst) {
                 return;
             }
             let handle = handle.clone();
@@ -599,17 +636,18 @@ pub fn ensure_settings_window(app: &AppHandle) -> Result<WebviewWindow, String> 
     }
     let locale = crate::i18n::app_locale(app);
     let title = crate::i18n::t(locale, "window_settings");
-    let window = WebviewWindowBuilder::new(app, SETTINGS_LABEL, WebviewUrl::App("/settings".into()))
-        .title(title)
-        .inner_size(720.0, 760.0)
-        .min_inner_size(520.0, 480.0)
-        .decorations(false)
-        .transparent(true)
-        .resizable(true)
-        .center()
-        .visible(false)
-        .build()
-        .map_err(|e| format!("Settings-Fenster nicht erstellbar: {e}"))?;
+    let window =
+        WebviewWindowBuilder::new(app, SETTINGS_LABEL, WebviewUrl::App("/settings".into()))
+            .title(title)
+            .inner_size(720.0, 760.0)
+            .min_inner_size(520.0, 480.0)
+            .decorations(false)
+            .transparent(true)
+            .resizable(true)
+            .center()
+            .visible(false)
+            .build()
+            .map_err(|e| format!("Settings-Fenster nicht erstellbar: {e}"))?;
 
     attach_settings_lifecycle(&window);
     Ok(window)
@@ -706,6 +744,9 @@ fn toggle_tray_menu(app: &AppHandle) {
         let _ = window.hide();
         return;
     }
+    if !crate::watchdog::allow_show(app, TRAY_MENU_LABEL) {
+        return;
+    }
     let anchor = window
         .cursor_position()
         .map(|position| (position.x, position.y))
@@ -800,6 +841,9 @@ pub fn end_overlay_drag(app: AppHandle) {
 
 #[tauri::command]
 pub fn open_settings(app: AppHandle) -> Result<(), String> {
+    if !crate::watchdog::allow_show(&app, SETTINGS_LABEL) {
+        return Ok(());
+    }
     OPENING_SETTINGS.store(true, Ordering::SeqCst);
     let _ = hide_overlay(&app);
     let window = ensure_settings_window(&app)?;
@@ -824,9 +868,9 @@ pub fn hide_tray_menu(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn resize_tray_menu(app: AppHandle, height: f64) -> Result<(), String> {
-    let window = app
-        .get_webview_window(TRAY_MENU_LABEL)
-        .ok_or_else(|| crate::i18n::t(crate::i18n::app_locale(&app), "tray_menu_missing").to_string())?;
+    let window = app.get_webview_window(TRAY_MENU_LABEL).ok_or_else(|| {
+        crate::i18n::t(crate::i18n::app_locale(&app), "tray_menu_missing").to_string()
+    })?;
     let clamped = height.max(60.0).min(420.0);
     window
         .set_size(LogicalSize::new(TRAY_MENU_WIDTH, clamped))
