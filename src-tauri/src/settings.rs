@@ -14,11 +14,16 @@ const USER_FILES: &[&str] = &[
     "settings.json",
     "providers.json",
     "tts_keys.json",
+    "stt_keys.json",
     "provider_keys.json",
     "dumbo.db",
 ];
 pub const DEFAULT_HOTKEY: &str = "alt+space";
 pub const DEFAULT_TTS_HOTKEY: &str = "alt+shift+s";
+pub const DEFAULT_STT_HOTKEY: &str = "ctrl+shift+space";
+pub const DEFAULT_TTS_READ_LATEST_HOTKEY: &str = "ctrl+alt+r";
+pub const DEFAULT_STT_PROVIDER: &str = "groq";
+pub const DEFAULT_STT_MODEL: &str = "whisper-large-v3";
 
 pub const DEFAULT_GEMINI_TTS_VOICE: &str = "Puck";
 pub const DEFAULT_GEMINI_TTS_MODEL: &str = "gemini-2.0-flash";
@@ -54,7 +59,11 @@ fn roaming_parent() -> Option<PathBuf> {
     std::env::var("APPDATA")
         .ok()
         .map(PathBuf::from)
-        .or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".config")))
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".config"))
+        })
 }
 
 pub fn legacy_data_dirs() -> Vec<PathBuf> {
@@ -185,8 +194,7 @@ fn settings_from_json(raw: &str) -> Result<AppSettings, String> {
     let user: Value = serde_json::from_str(raw).map_err(|e| e.to_string())?;
     let defaults = serde_json::to_value(AppSettings::default()).map_err(|e| e.to_string())?;
     let merged = overlay_value(defaults, user);
-    let mut settings: AppSettings =
-        serde_json::from_value(merged).map_err(|e| e.to_string())?;
+    let mut settings: AppSettings = serde_json::from_value(merged).map_err(|e| e.to_string())?;
     settings.normalize();
     Ok(settings)
 }
@@ -241,8 +249,48 @@ pub struct AppSettings {
     pub tts_azure_voice: String,
     #[serde(default = "default_azure_tts_region")]
     pub tts_azure_region_setting: String,
+    #[serde(default = "default_stt_hotkey")]
+    pub stt_hotkey: String,
+    #[serde(default = "default_tts_read_latest_hotkey")]
+    pub tts_read_latest_hotkey: String,
+    #[serde(default = "default_stt_provider")]
+    pub stt_provider: String,
+    #[serde(default = "default_stt_model")]
+    pub stt_model: String,
+    #[serde(default = "default_true")]
+    pub stt_refiner: bool,
+    #[serde(default)]
+    pub stt_auto_enter: bool,
+    #[serde(default = "default_true")]
+    pub tts_veadio_hud: bool,
     #[serde(default = "default_language")]
     pub language: String,
+    #[serde(default)]
+    pub overlay_anchored: bool,
+    #[serde(default = "default_overlay_fx")]
+    pub overlay_fx: f64,
+    #[serde(default = "default_overlay_fy")]
+    pub overlay_fy: f64,
+    #[serde(default)]
+    pub overlay_last_x: Option<i32>,
+    #[serde(default)]
+    pub overlay_last_y: Option<i32>,
+}
+
+fn default_stt_hotkey() -> String {
+    DEFAULT_STT_HOTKEY.to_string()
+}
+fn default_tts_read_latest_hotkey() -> String {
+    DEFAULT_TTS_READ_LATEST_HOTKEY.to_string()
+}
+fn default_stt_provider() -> String {
+    DEFAULT_STT_PROVIDER.to_string()
+}
+fn default_stt_model() -> String {
+    DEFAULT_STT_MODEL.to_string()
+}
+fn default_true() -> bool {
+    true
 }
 
 fn default_hotkey() -> String {
@@ -308,6 +356,20 @@ fn default_azure_tts_region() -> String {
 fn default_language() -> String {
     "auto".to_string()
 }
+fn default_overlay_fx() -> f64 {
+    0.5
+}
+fn default_overlay_fy() -> f64 {
+    0.5
+}
+
+fn clamp_unit(value: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        0.5
+    }
+}
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -335,7 +397,19 @@ impl Default for AppSettings {
             tts_eleven_model: DEFAULT_ELEVEN_TTS_MODEL.to_string(),
             tts_azure_voice: DEFAULT_AZURE_TTS_VOICE.to_string(),
             tts_azure_region_setting: DEFAULT_AZURE_TTS_REGION.to_string(),
+            stt_hotkey: DEFAULT_STT_HOTKEY.to_string(),
+            tts_read_latest_hotkey: DEFAULT_TTS_READ_LATEST_HOTKEY.to_string(),
+            stt_provider: DEFAULT_STT_PROVIDER.to_string(),
+            stt_model: DEFAULT_STT_MODEL.to_string(),
+            stt_refiner: true,
+            stt_auto_enter: false,
+            tts_veadio_hud: true,
             language: default_language(),
+            overlay_anchored: false,
+            overlay_fx: default_overlay_fx(),
+            overlay_fy: default_overlay_fy(),
+            overlay_last_x: None,
+            overlay_last_y: None,
         }
     }
 }
@@ -347,6 +421,18 @@ impl AppSettings {
         }
         if self.tts_hotkey.trim().is_empty() {
             self.tts_hotkey = DEFAULT_TTS_HOTKEY.to_string();
+        }
+        if self.stt_hotkey.trim().is_empty() {
+            self.stt_hotkey = DEFAULT_STT_HOTKEY.to_string();
+        }
+        if self.tts_read_latest_hotkey.trim().is_empty() {
+            self.tts_read_latest_hotkey = DEFAULT_TTS_READ_LATEST_HOTKEY.to_string();
+        }
+        if self.stt_provider.trim().is_empty() {
+            self.stt_provider = DEFAULT_STT_PROVIDER.to_string();
+        }
+        if self.stt_model.trim().is_empty() {
+            self.stt_model = DEFAULT_STT_MODEL.to_string();
         }
         if self.tts_custom_url.trim().is_empty() {
             self.tts_custom_url = DEFAULT_CUSTOM_TTS_URL.to_string();
@@ -386,6 +472,8 @@ impl AppSettings {
             }
         }
         self.tts_azure_region = self.tts_azure_region_setting.clone();
+        self.overlay_fx = clamp_unit(self.overlay_fx);
+        self.overlay_fy = clamp_unit(self.overlay_fy);
 
         // Sync active tts_voice and tts_model depending on selected provider
         match self.tts_provider.to_lowercase().as_str() {
@@ -417,7 +505,6 @@ impl AppSettings {
         }
     }
 }
-
 
 pub fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
     prepare_config_dir(app)
@@ -467,7 +554,9 @@ pub fn load(app: &AppHandle) -> Result<AppSettings, String> {
         use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
         use winreg::RegKey;
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        if let Ok(run_key) = hkcu.open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_READ) {
+        if let Ok(run_key) =
+            hkcu.open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_READ)
+        {
             settings.autostart = run_key.get_value::<String, _>("Dumbo").is_ok();
         }
     }
@@ -479,6 +568,21 @@ pub fn load(app: &AppHandle) -> Result<AppSettings, String> {
         }
     }
     Ok(settings)
+}
+
+pub fn patch<F>(app: &AppHandle, emit: bool, f: F) -> Result<AppSettings, String>
+where
+    F: FnOnce(&mut AppSettings),
+{
+    let path = settings_path(app)?;
+    let mut next = load(app)?;
+    f(&mut next);
+    next.normalize();
+    save_to_disk(&path, &next)?;
+    if emit {
+        let _ = app.emit("settings-changed", &next);
+    }
+    Ok(next)
 }
 
 fn save_to_disk(path: &PathBuf, settings: &AppSettings) -> Result<(), String> {
@@ -509,7 +613,7 @@ pub fn save_settings(app: AppHandle, settings: Value) -> Result<AppSettings, Str
     next.normalize();
     save_to_disk(&path, &next)?;
 
-    if let Err(err) = crate::overlay::register_hotkeys(&app, &next.hotkey, &next.tts_hotkey) {
+    if let Err(err) = crate::overlay::register_hotkeys(&app, &next) {
         eprintln!("Hotkeys Registrierung Warnung: {err}");
     }
     if let Err(err) = apply_autostart(&app, next.autostart) {
@@ -530,7 +634,10 @@ pub fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
 
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let run_key = hkcu
-        .open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_SET_VALUE)
+        .open_subkey_with_flags(
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            KEY_SET_VALUE,
+        )
         .map_err(|e| format!("Registry Run key nicht zugreifbar: {e}"))?;
 
     if enabled {
@@ -611,5 +718,16 @@ mod tests {
         assert_eq!(s.hotkey, "ctrl+q");
         assert!(s.history_enabled);
         assert_eq!(s.language, "auto");
+        assert!(!s.overlay_anchored);
+        assert_eq!(s.overlay_fx, 0.5);
+        assert_eq!(s.overlay_fy, 0.5);
+        assert_eq!(s.overlay_last_x, None);
+    }
+
+    #[test]
+    fn overlay_fractions_clamp() {
+        let s = settings_from_json(r#"{"overlayFx": 1.8, "overlayFy": -0.2}"#).expect("parse");
+        assert_eq!(s.overlay_fx, 1.0);
+        assert_eq!(s.overlay_fy, 0.0);
     }
 }

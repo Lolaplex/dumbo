@@ -31,7 +31,20 @@ export type AppSettings = {
   ttsElevenModel?: string;
   ttsAzureVoice?: string;
   ttsAzureRegionSetting?: string;
+  sttHotkey?: string;
+  ttsReadLatestHotkey?: string;
+  sttProvider?: string;
+  sttModel?: string;
+  sttRefiner?: boolean;
+  sttAutoEnter?: boolean;
+  ttsVeadioHud?: boolean;
   language?: "auto" | "en" | "de" | string;
+};
+
+export type SttState = {
+  recording: boolean;
+  transcribing: boolean;
+  lastText?: string | null;
 };
 
 export type LocalTtsStatus = {

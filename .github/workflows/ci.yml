@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, dev]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -33,14 +33,20 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+  notify-failure:
+    name: Notify CI Failure
+    needs: [frontend]
+    if: ${{ failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
       - name: Post error to CI webhook
-        if: failure()
         env:
-          CI_WEBHOOK_URL: ${{ secrets.CI_WEBHOOK_URL }}
+          WEBHOOK_URL: ${{ secrets.CI_WEBHOOK_URL }}
         run: |
-          if [ -z "$CI_WEBHOOK_URL" ]; then
+          if [ -z "$WEBHOOK_URL" ]; then
             echo "::warning::CI_WEBHOOK_URL unset; skip notification"
             exit 0
           fi
           PAYLOAD=$(python3 -c "import json, os; repo=os.environ['GITHUB_REPOSITORY']; server=os.environ['GITHUB_SERVER_URL']; repo_url=f'{server}/{repo}'; ref=os.environ.get('GITHUB_HEAD_REF') or os.environ.get('GITHUB_REF_NAME'); run_url=f'{server}/{repo}/actions/runs/{os.environ[\"GITHUB_RUN_ID\"]}'; print(json.dumps({'embeds':[{'title':f'🔴 CI Failure: {repo}','url':run_url,'description':f\"Workflow **{os.environ['GITHUB_WORKFLOW']}** failed on \`{ref}\`\\n[View run]({run_url}) · [Repository]({repo_url})\",'color':15158332}]}))")
-          curl -fsS -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$CI_WEBHOOK_URL"
+          curl -fsS -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$WEBHOOK_URL"

@@ -2,62 +2,167 @@
   <img src="static/splash-icon.png" alt="Dumbo Logo" width="96" />
   <h1>Dumbo</h1>
   <p>
-    <a href="https://github.com/Lolaplex/dumbo/releases"><img src="https://img.shields.io/badge/version-0.44.0-blue.svg?style=flat-square" alt="Version 0.44.0" /></a>
+    <a href="https://github.com/Lolaplex/dumbo/releases"><img src="https://img.shields.io/badge/version-0.45.0-blue.svg?style=flat-square" alt="Version 0.45.0" /></a>
     <img src="https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4.svg?style=flat-square&logo=windows&logoColor=white" alt="Windows 10/11" />
-    <img src="https://img.shields.io/badge/Tauri-2.0-FFC131.svg?style=flat-square&logo=tauri&logoColor=black" alt="Tauri 2" />
-    <img src="https://img.shields.io/badge/Svelte-5-FF3E00.svg?style=flat-square&logo=svelte&logoColor=white" alt="Svelte 5" />
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License" /></a>
   </p>
   <p>
-    <strong>Ultra-fast, lightweight AI desktop overlay &amp; speech assistant for Windows.</strong><br>
-    One instant hotkey. Zero Electron memory bloat. Bring your own key.
+    <strong>Your AI, one keypress away.</strong><br>
+    Ask questions, dictate text and have answers read aloud — in any Windows app, without switching windows.
   </p>
 </div>
 
 ---
 
-## Quickstart
+## What is Dumbo?
 
-Grab the latest installer from **[Releases](https://github.com/Lolaplex/dumbo/releases)**:
+Dumbo is a small helper that lives in your Windows system tray. Press a key, a small box appears, you type or speak, and the answer is there. Press the key again and it is gone.
 
-Windows only at the moment. MacOS coming soon.
+It works on top of whatever you are doing. You do not have to open a browser, copy text back and forth, or leave the app you are working in.
 
-1. Run the installer.
-2. Open **Settings** via the system tray or shortcut `Ctrl+,`.
-3. Pick your provider (Gemini, Claude, OpenAI, OpenRouter, Local/Custom), enter your API key, and hit **Save**.
-4. Press `Alt+Space` anywhere to ask.
-
-> [!TIP]
-> **🤖 Smart Updates:**
-> Dumbo includes automatic cryptographic updates via Minisign. Whenever a new version is released on GitHub, check and install in one click right inside Settings.
+Dumbo does not bring its own AI. You connect it to an AI service you already use (or want to use) with an account and an API key. That keeps you in control of cost and privacy.
 
 ---
 
-## What it does
+## What you can do with it
 
-Dumbo sits in your Windows system tray and gives you instant, non-intrusive AI assistance without switching windows or breaking your focus.
+### Ask anything — `Alt+Space`
 
-- **Instant Floating HUD (`Alt+Space`)**: Frameless, centered floating prompt that appears in sub-milliseconds without stealing window focus unexpectedly.
-- **Context-Aware Selection**: Highlight code or text in any app (browser, IDE, PDF, Word) — Dumbo captures it via Windows UI Automation as prompt context.
-- **Global Neural TTS (`Alt+Shift+S`)**: High-quality screen reader for highlighted text and clipboard using Azure, ElevenLabs, Gemini, OpenAI, or local Kokoro/Piper. Press again to stop immediately.
-- **Native Keyring Security (BYOK)**: API keys are encrypted in the native **Windows Credential Manager** via OS keyring — never stored in plaintext files.
-- **Local SQLite History**: Continuous multi-turn threads with embedded SQLite scrollback.
-- **Windows Autostart**: Clean boot synchronization with native Windows registry.
+A small floating box appears in the middle of your screen. Type your question and press `Enter` for a short answer, or `Shift+Enter` if you want a longer, more detailed one.
+
+The box stays where you put it. Drag it by the handle at the top edge and Dumbo remembers that spot for next time.
+
+### Dictate instead of typing — `Ctrl+Shift+Space`
+
+Press the key, speak, and press it again. Dumbo writes what you said straight into the app you are using — a chat, a document, an email, a code editor. No copy-paste.
+
+It also cleans up your speech: "um", "uh" and false starts are removed, and the text is formatted as a proper sentence or instruction.
+
+If you want it to send the message right away, turn on **Auto-Enter after Dictation** in Settings.
+
+> Dictation needs a free **Groq** API key. See [Voice setup](#voice-setup) below.
+
+### Have text read aloud — `Alt+Shift+S`
+
+Select text in any app and press the key. Dumbo reads it out loud. Press again to stop immediately.
+
+If you have nothing selected, it reads whatever is in your clipboard. And with `Ctrl+Alt+R` it reads the last answer Dumbo gave you, without you having to select anything.
+
+You can pick the voice and the service in Settings — Azure, ElevenLabs, Google Gemini, OpenAI, or your own local speech server.
+
+### Ask about what you have selected
+
+Highlight text in a browser, a PDF, Word or your editor, then press `Alt+Space`. Dumbo picks up the selection automatically and uses it as context, so you can just ask "explain this" or "what is wrong here".
+
+### Everything is remembered
+
+Every conversation is saved locally on your PC. Scroll back through earlier chats whenever you need them. Nothing is uploaded anywhere except to the AI service you chose.
+
+---
+
+## Install
+
+1. Download the latest installer from **[Releases](https://github.com/Lolaplex/dumbo/releases)**.
+2. Run it. Windows may ask for confirmation — Dumbo is not code-signed yet, so click **More info → Run anyway**.
+3. Dumbo starts and waits in the system tray (the small icons next to your clock).
+
+Windows 10 and 11 only. macOS is not supported yet.
+
+---
+
+## First steps
+
+1. Right-click the Dumbo icon in the tray and choose **Settings** (or press `Ctrl+,`).
+2. Under **Provider**, choose an AI service and paste your API key.
+3. Press **Save**.
+4. Press `Alt+Space` anywhere and ask something.
+
+### Where do I get an API key?
+
+You need an account with one of these services. All of them offer a free tier or free trial credit:
+
+| Service | Good for |
+|---|---|
+| **Google Gemini** | Generous free tier, good all-rounder |
+| **OpenAI** | Best known, reliable |
+| **Anthropic Claude** | Long, careful answers |
+| **OpenRouter** | One key for many different models |
+| **Local / Custom** | Your own server, fully offline |
+
+Pick one, create a key in that service's dashboard, and paste it into Dumbo. Your key is stored in the **Windows Credential Manager**, not in a plain text file.
+
+---
+
+## Voice setup
+
+Dumbo's voice features are optional. Text chat works without them.
+
+### Dictation (speech to text)
+
+1. Create a free account at [console.groq.com](https://console.groq.com) and generate an API key (it starts with `gsk_`).
+2. In Dumbo Settings, open **Speech-to-Text** and paste the key.
+3. Press `Ctrl+Shift+Space`, say something, press it again.
+
+Dumbo uses Groq's Whisper model to turn your speech into text, then a second model tidies it up. You can switch the tidy-up step off if you prefer your words exactly as spoken.
+
+### Read aloud (text to speech)
+
+1. In Settings, open **Text-to-Speech** and pick a service.
+2. Paste that service's API key.
+3. Use **Test voice** to hear a sample.
+
+Azure gives you the widest choice of natural voices and languages. ElevenLabs sounds the most human. Gemini and OpenAI are quick and simple. **Custom** lets you point Dumbo at your own local speech server if you run one.
 
 ---
 
 ## Shortcuts
 
-| Action | Shortcut | Description |
-|---|---|---|
-| **Toggle Overlay** | `Alt+Space` | Open or close the quick-ask overlay |
-| **Ask (Short)** | `Enter` | Submit prompt for a direct, concise answer |
-| **Ask (Detailed)** | `Shift+Enter` | Submit prompt for an in-depth answer |
-| **Read Aloud (TTS)** | `Alt+Shift+S` | Speak highlighted text or clipboard; press again to stop |
-| **Settings** | `Ctrl+,` | Open configuration window |
-| **Dismiss** | `Esc` | Hide the overlay immediately |
+| Action | Shortcut |
+|---|---|
+| Open / close the ask box | `Alt+Space` |
+| Short answer | `Enter` |
+| Detailed answer | `Shift+Enter` |
+| Dictate (speech to text) | `Ctrl+Shift+Space` |
+| Read selection or clipboard aloud | `Alt+Shift+S` |
+| Read Dumbo's last answer aloud | `Ctrl+Alt+R` |
+| Settings | `Ctrl+,` |
+| Close the ask box | `Esc` |
 
-*All shortcuts and language preferences (English / Deutsch) can be adjusted in **Settings**.*
+Every shortcut can be changed in Settings. The interface is available in **English and German**.
+
+---
+
+## Keeping Dumbo up to date
+
+Dumbo checks for new versions itself. Open Settings and press **Check for updates** — if a newer version exists, it downloads and installs in one click. Updates are cryptographically signed, so nobody can slip you a modified copy.
+
+---
+
+## If something does not work
+
+**Nothing happens when I press a shortcut.**
+Another program may already be using that key combination. Change the shortcut in Settings.
+
+**Dictation records nothing.**
+Check that Windows allows microphone access: *Settings → Privacy & security → Microphone*. Also make sure the right microphone is selected as the default input device.
+
+**I get an error about my API key.**
+The key may be expired, or it may belong to a different service than the one selected in Settings. Create a new key and paste it again.
+
+**No sound when reading aloud.**
+Press **Test voice** in the Text-to-Speech section. If that fails, the key or the selected voice is the problem.
+
+**The update check fails.**
+Make sure you are on version 0.45.0 or newer. Older versions pointed at an update file that no longer exists.
+
+---
+
+## Privacy
+
+- API keys live in the **Windows Credential Manager**.
+- Chat history stays in a local database on your PC.
+- Your prompts and selected text are sent only to the AI service you configured, never to us.
+- Dumbo has no telemetry and no analytics.
 
 ---
 

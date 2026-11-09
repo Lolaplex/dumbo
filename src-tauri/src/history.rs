@@ -381,8 +381,11 @@ pub fn get_chat(app: AppHandle, id: String) -> Result<ChatDetail, String> {
 #[tauri::command]
 pub fn delete_chat(app: AppHandle, id: String) -> Result<(), String> {
     let conn = open(&app)?;
-    conn.execute("DELETE FROM messages WHERE chat_id = ?1", rusqlite::params![id])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM messages WHERE chat_id = ?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM chats WHERE id = ?1", rusqlite::params![id])
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -544,7 +547,9 @@ mod tests {
         assert_eq!(messages, 1);
         let dest = Connection::open(&dest_path).unwrap();
         let title: String = dest
-            .query_row("SELECT title FROM chats WHERE id = 'keep'", [], |row| row.get(0))
+            .query_row("SELECT title FROM chats WHERE id = 'keep'", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(title, "modern");
         let n: i64 = dest

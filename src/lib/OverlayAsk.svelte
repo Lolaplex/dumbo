@@ -43,6 +43,13 @@
   let browseTurns = $state<SessionTurn[]>([]);
   let live = $state<Live>({ query: "", session: [], error: "", chatId: null, attachments: [] });
   let ttsState = $state<TtsLiveState>({ synthesizing: false, playing: false, busy: false });
+  let sttLive = $state<{ recording: boolean; transcribing: boolean }>({
+    recording: false,
+    transcribing: false,
+  });
+  let veadioText = $state("");
+  let veadioActiveWordIndex = $state(0);
+  let veadioTimer: any;
   let hiddenAt = 0;
   const SESSION_TTL_MS = 60_000;
 
@@ -601,6 +608,34 @@
       if (!event.payload) {
         ttsState.synthesizing = false;
         ttsState.playing = false;
+        veadioText = "";
+        clearInterval(veadioTimer);
+        void refreshHeight();
+      }
+    }).then((unlisten) => unsubs.push(unlisten));
+
+    void listen<import("$lib/types").SttState>("stt-state-changed", (event) => {
+      if (event.payload) {
+        sttLive.recording = event.payload.recording;
+        sttLive.transcribing = event.payload.transcribing;
+        void refreshHeight();
+      }
+    }).then((unlisten) => unsubs.push(unlisten));
+
+    void listen<string>("tts-reading-start", (event) => {
+      if (event.payload && settings?.ttsVeadioHud) {
+        veadioText = event.payload;
+        veadioActiveWordIndex = 0;
+        clearInterval(veadioTimer);
+        const words = veadioText.split(/\s+/).filter(Boolean);
+        veadioTimer = setInterval(() => {
+          if (veadioActiveWordIndex < words.length - 1) {
+            veadioActiveWordIndex++;
+          } else {
+            clearInterval(veadioTimer);
+          }
+        }, 250);
+        void refreshHeight();
       }
     }).then((unlisten) => unsubs.push(unlisten));
 
@@ -737,6 +772,20 @@
     }
   }}
 >
+  <div
+    class="grab"
+    data-tauri-drag-region
+    role="button"
+    tabindex="-1"
+    aria-label={t("overlayGrabAria")}
+    title={t("overlayGrabAria")}
+    onpointerdown={() => {
+      void ipc.beginOverlayDrag();
+    }}
+    onpointerup={() => {
+      void ipc.endOverlayDrag();
+    }}
+  ></div>
   <div class="pill" class:has-attachments={attachments.length > 0} onwheel={onWheel}>
     {#if attachments.length > 0}
       <div class="attachments-row">
@@ -805,6 +854,17 @@
         <span class="caret" style="left: {caretX}px; top: {caretY}px; height: {caretHeight}px"></span>
       {/if}
     </div>
+    {#if sttLive.recording}
+      <span class="stt-badge recording" title="Aufnahme läuft...">
+        <span class="stt-pulse"></span>
+        <span>Aufnahme</span>
+      </span>
+    {:else if sttLive.transcribing}
+      <span class="stt-badge transcribing" title="Transkribiere & Poliere...">
+        <span class="stt-spinner"></span>
+        <span>Poliere</span>
+      </span>
+    {/if}
     {#if browsing}
       <span class="badge">{cursor + 1}/{activeHistory.length}</span>
     {/if}
@@ -839,6 +899,20 @@
       </button>
     {/if}
   </div>
+
+  {#if veadioText && settings?.ttsVeadioHud}
+    <div class="veadio-hud">
+      <div class="veadio-head">
+        <span class="veadio-dot"></span>
+        <span class="veadio-label">Veadio Speech Flow</span>
+      </div>
+      <p class="veadio-body">
+        {#each veadioText.split(/\s+/).filter(Boolean) as word, i (i)}
+          <span class="veadio-word" class:is-active={i === veadioActiveWordIndex}>{word}</span>{" "}
+        {/each}
+      </p>
+    </div>
+  {/if}
 
   {#if expanded}
     <section class="sheet" bind:this={sheetEl} onwheel={onSheetWheel}>
@@ -929,8 +1003,51 @@
   /* Padding must exceed the largest shadow extent so the blur fades out
      inside the transparent window instead of being clipped rectangular. */
   .stage {
+    position: relative;
     padding: 22px 30px 38px;
     background: transparent;
+  }
+
+  .grab {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 64px;
+    height: 14px;
+    z-index: 5;
+    cursor: grab;
+    user-select: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .stage:hover .grab,
+  .grab:focus-visible,
+  .grab:active {
+    opacity: 1;
+  }
+
+  .grab:active {
+    cursor: grabbing;
+  }
+
+  .grab::after {
+    content: "";
+    display: block;
+    width: 36px;
+    height: 4px;
+    margin: 5px auto 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22);
+    pointer-events: none;
+  }
+
+  .grab:hover::after {
+    background: rgba(255, 255, 255, 0.38);
   }
 
   .pill {
@@ -1396,5 +1513,94 @@
     50% {
       opacity: 0.12;
     }
+  }
+
+  .stt-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    margin-right: 6px;
+    user-select: none;
+  }
+  .stt-badge.recording {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+  .stt-badge.transcribing {
+    background: rgba(168, 85, 247, 0.15);
+    color: #c084fc;
+    border: 1px solid rgba(168, 85, 247, 0.3);
+  }
+  .stt-pulse {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: #ef4444;
+    box-shadow: 0 0 6px #ef4444;
+    animation: stt-blink 1s ease-in-out infinite;
+  }
+  @keyframes stt-blink {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.35; transform: scale(0.8); }
+  }
+  .stt-spinner {
+    width: 7px;
+    height: 7px;
+    border: 1.5px solid #c084fc;
+    border-top-color: transparent;
+    border-radius: 999px;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .veadio-hud {
+    margin-top: 10px;
+    padding: 12px 18px;
+    background: rgba(18, 16, 31, 0.95);
+    border: 1px solid rgba(129, 140, 248, 0.25);
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(192, 132, 252, 0.15);
+    backdrop-filter: blur(12px);
+  }
+  .veadio-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .veadio-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: #22d3ee;
+    box-shadow: 0 0 6px #22d3ee;
+  }
+  .veadio-label {
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: #818cf8;
+  }
+  .veadio-body {
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: #a39fbd;
+    margin: 0;
+  }
+  .veadio-word {
+    transition: color 0.15s ease, text-shadow 0.15s ease;
+  }
+  .veadio-word.is-active {
+    color: #22d3ee;
+    font-weight: 600;
+    text-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
   }
 </style>

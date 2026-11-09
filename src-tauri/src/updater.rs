@@ -14,8 +14,10 @@ pub struct UpdateInfo {
 #[tauri::command]
 pub async fn check_for_updates(app: AppHandle) -> Result<UpdateInfo, String> {
     let current_version = app.package_info().version.to_string();
-    let updater = app.updater().map_err(|e| format!("Updater not available: {e}"))?;
-    
+    let updater = app
+        .updater()
+        .map_err(|e| format!("Updater not available: {e}"))?;
+
     match updater.check().await {
         Ok(Some(update)) => Ok(UpdateInfo {
             available: true,
@@ -37,8 +39,14 @@ pub async fn check_for_updates(app: AppHandle) -> Result<UpdateInfo, String> {
 
 #[tauri::command]
 pub async fn install_update(app: AppHandle) -> Result<(), String> {
-    let updater = app.updater().map_err(|e| format!("Updater not available: {e}"))?;
-    if let Some(update) = updater.check().await.map_err(|e| format!("Update check failed: {e}"))? {
+    let updater = app
+        .updater()
+        .map_err(|e| format!("Updater not available: {e}"))?;
+    if let Some(update) = updater
+        .check()
+        .await
+        .map_err(|e| format!("Update check failed: {e}"))?
+    {
         update
             .download_and_install(|_chunk, _total| {}, || {})
             .await

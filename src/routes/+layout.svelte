@@ -15,6 +15,35 @@
     }
   });
 
+  onMount(() => {
+    let dead = false;
+    const pulse = () => {
+      if (dead) return;
+      void import("@tauri-apps/api/core")
+        .then(({ invoke }) => invoke("webview_pulse"))
+        .catch(() => {});
+    };
+    pulse();
+    const timer = setInterval(pulse, 1500);
+    const onWake = () => pulse();
+    document.addEventListener("visibilitychange", onWake);
+    window.addEventListener("pageshow", onWake);
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/event").then(({ listen }) =>
+      listen("dumbo-probe", () => pulse()).then((stop) => {
+        if (dead) stop();
+        else unlisten = stop;
+      }),
+    );
+    return () => {
+      dead = true;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onWake);
+      window.removeEventListener("pageshow", onWake);
+      unlisten?.();
+    };
+  });
+
   let settings = $derived(label === "settings" || $page.url.pathname.startsWith("/settings"));
 
   $effect(() => {

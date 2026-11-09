@@ -241,8 +241,7 @@ fn use_gemini_native(provider: &Provider) -> bool {
         return false;
     }
     let base = provider.base_url.to_ascii_lowercase();
-    base.contains("generativelanguage.googleapis.com")
-        || base.contains("aiplatform.googleapis.com")
+    base.contains("generativelanguage.googleapis.com") || base.contains("aiplatform.googleapis.com")
 }
 
 fn gemini_stream_url(base_url: &str, model: &str) -> String {
@@ -310,11 +309,18 @@ fn gemini_chunk_text(data: &str) -> Result<Option<String>, String> {
     let mut out = String::new();
     if let Some(candidates) = value.get("candidates").and_then(Value::as_array) {
         for candidate in candidates {
-            let Some(parts) = candidate.pointer("/content/parts").and_then(Value::as_array) else {
+            let Some(parts) = candidate
+                .pointer("/content/parts")
+                .and_then(Value::as_array)
+            else {
                 continue;
             };
             for part in parts {
-                if part.get("thought").and_then(Value::as_bool).unwrap_or(false) {
+                if part
+                    .get("thought")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+                {
                     continue;
                 }
                 if let Some(text) = part.get("text").and_then(Value::as_str) {
@@ -452,8 +458,14 @@ async fn run_chat(
     let key = providers::read_key(&provider.id)?;
     if key.trim().is_empty() && provider.kind != "ollama" && provider.kind != "lmstudio" {
         let msg = match locale {
-            crate::i18n::Locale::De => format!("Kein API-Key für '{}'. In Settings eintragen und speichern.", provider.name),
-            crate::i18n::Locale::En => format!("No API key for '{}'. Please enter it in Settings and save.", provider.name),
+            crate::i18n::Locale::De => format!(
+                "Kein API-Key für '{}'. In Settings eintragen und speichern.",
+                provider.name
+            ),
+            crate::i18n::Locale::En => format!(
+                "No API key for '{}'. Please enter it in Settings and save.",
+                provider.name
+            ),
         };
         return Err(msg);
     }
@@ -476,7 +488,8 @@ async fn run_chat(
     let system = system_prompt(request.detailed);
     let prior = sanitize_prior(&request.prior);
 
-    let answer = if provider.kind == "anthropic" || provider.base_url.contains("api.anthropic.com") {
+    let answer = if provider.kind == "anthropic" || provider.base_url.contains("api.anthropic.com")
+    {
         stream_anthropic(
             &app,
             &provider,
@@ -546,7 +559,11 @@ async fn stream_anthropic(
 ) -> Result<String, String> {
     let mut messages: Vec<serde_json::Value> = Vec::with_capacity(prior.len() + 1);
     for item in prior {
-        let role = if item.role == "assistant" { "assistant" } else { "user" };
+        let role = if item.role == "assistant" {
+            "assistant"
+        } else {
+            "user"
+        };
         messages.push(serde_json::json!({
             "role": role,
             "content": item.content,
@@ -784,11 +801,23 @@ async fn read_sse_stream(
         }
         let bytes = chunk.map_err(|e| format!("Stream abgebrochen: {e}"))?;
         buffer.push_str(&String::from_utf8_lossy(&bytes));
-        emit_parsed_events(app, request_id, &mut answer, take_sse_events(&mut buffer, false), parse)?;
+        emit_parsed_events(
+            app,
+            request_id,
+            &mut answer,
+            take_sse_events(&mut buffer, false),
+            parse,
+        )?;
     }
 
     if !abort.load(Ordering::Relaxed) {
-        emit_parsed_events(app, request_id, &mut answer, take_sse_events(&mut buffer, true), parse)?;
+        emit_parsed_events(
+            app,
+            request_id,
+            &mut answer,
+            take_sse_events(&mut buffer, true),
+            parse,
+        )?;
     }
 
     Ok(answer)
@@ -850,7 +879,10 @@ mod tests {
     #[test]
     fn anthropic_reads_content_block_delta() {
         let delta = r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello Claude"}}"#;
-        assert_eq!(anthropic_chunk_text(delta).unwrap(), Some("Hello Claude".into()));
+        assert_eq!(
+            anthropic_chunk_text(delta).unwrap(),
+            Some("Hello Claude".into())
+        );
         let start = r#"{"type":"message_start"}"#;
         assert_eq!(anthropic_chunk_text(start).unwrap(), None);
     }
@@ -914,7 +946,11 @@ mod tests {
     fn prior_keeps_last_sixteen_and_drops_empty() {
         let prior: Vec<PriorMessage> = (0..20)
             .map(|index| PriorMessage {
-                role: if index % 2 == 0 { "user".into() } else { "assistant".into() },
+                role: if index % 2 == 0 {
+                    "user".into()
+                } else {
+                    "assistant".into()
+                },
                 content: format!("m{index}"),
             })
             .collect();
